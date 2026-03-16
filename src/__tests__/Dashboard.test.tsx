@@ -1,39 +1,60 @@
 import { render, screen } from '@testing-library/react'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+import React from 'react'
+
+// ---------------------------------------------------------------------------
+// Mock react-resizable-panels — jsdom lacks ResizeObserver
+// ---------------------------------------------------------------------------
+
+vi.mock('react-resizable-panels', () => ({
+  Group: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="panel-group">{children}</div>
+  ),
+  Panel: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="panel">{children}</div>
+  ),
+  Separator: () => <div data-testid="resize-handle" />,
+}))
+
+// ---------------------------------------------------------------------------
+// Mock the 4 child components
+// ---------------------------------------------------------------------------
+
+vi.mock('../components/GraphPane', () => ({
+  GraphPane: () => <div data-testid="graph-pane">GraphPane</div>,
+}))
+
+vi.mock('../components/EventStream', () => ({
+  EventStream: () => <div data-testid="event-stream">EventStream</div>,
+}))
+
+vi.mock('../components/NodeDetails', () => ({
+  NodeDetails: () => <div data-testid="node-details">NodeDetails</div>,
+}))
+
+vi.mock('../components/HumanInteraction', () => ({
+  HumanInteraction: () => <div data-testid="human-interaction">HumanInteraction</div>,
+}))
+
+// Import after mocks are set up
 import { Dashboard } from '../components/Dashboard'
 
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 describe('Dashboard', () => {
-  it('renders the Graph Pane', () => {
+  it('renders all four pane components', () => {
     render(<Dashboard />)
-    expect(screen.getByText('Graph Pane')).toBeInTheDocument()
+    expect(screen.getByTestId('graph-pane')).toBeInTheDocument()
+    expect(screen.getByTestId('event-stream')).toBeInTheDocument()
+    expect(screen.getByTestId('node-details')).toBeInTheDocument()
+    expect(screen.getByTestId('human-interaction')).toBeInTheDocument()
   })
 
-  it('renders the Event Stream pane', () => {
+  it('has at least 3 resize handles', () => {
     render(<Dashboard />)
-    expect(screen.getByText('Event Stream')).toBeInTheDocument()
-  })
-
-  it('renders the Node Details pane', () => {
-    render(<Dashboard />)
-    expect(screen.getByText('Node Details')).toBeInTheDocument()
-  })
-
-  it('renders the Human Interaction pane', () => {
-    render(<Dashboard />)
-    expect(screen.getByText('Human Interaction')).toBeInTheDocument()
-  })
-
-  it('has a 2x2 grid layout with grid-cols-2 and grid-rows-2', () => {
-    const { container } = render(<Dashboard />)
-    const grid = container.firstChild as HTMLElement
-    expect(grid.className).toMatch(/grid/)
-    expect(grid.className).toMatch(/grid-cols-2/)
-    expect(grid.className).toMatch(/grid-rows-2/)
-  })
-
-  it('has gap-px between panes', () => {
-    const { container } = render(<Dashboard />)
-    const grid = container.firstChild as HTMLElement
-    expect(grid.className).toMatch(/gap-px/)
+    const handles = screen.getAllByTestId('resize-handle')
+    expect(handles.length).toBeGreaterThanOrEqual(3)
   })
 })

@@ -1,1 +1,38 @@
-@import "tailwindcss";
+@import 'tailwindcss';
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-gray-950 text-gray-100;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-700 rounded;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-600;
+}
+
+/* SVG dark theme overrides */
+svg text {
+  fill: #e5e7eb; /* gray-200 */
+}
+
+svg .edge path,
+svg .edge line {
+  stroke: #9ca3af; /* gray-400 */
+}

@@ -11,6 +11,7 @@ beforeEach(() => {
     activePipelineId: null,
     events: new Map(),
     questions: new Map(),
+    selectedNodeId: null,
   })
 })
 
@@ -270,5 +271,81 @@ describe('clearPipelineEvents', () => {
 
     usePipelineStore.getState().clearPipelineEvents('pipe-1')
     expect(usePipelineStore.getState().events.has('pipe-1')).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Test 13-14: addEvent updates pipeline state from events (interview)
+// ---------------------------------------------------------------------------
+describe('addEvent updates pipeline state from events', () => {
+  it('adds a question on interview_started', () => {
+    const pipeline: PipelineSummary = {
+      id: 'pipe-1',
+      status: 'running',
+      started_at: '2024-01-15T10:00:00Z',
+      completed_nodes: [],
+      current_node: 'interview-stage',
+    }
+    usePipelineStore.getState().setPipelines([pipeline])
+
+    const event: PipelineEvent = {
+      event: 'interview_started',
+      question: 'Proceed with deployment?',
+      stage: 'deploy',
+    }
+    usePipelineStore.getState().addEvent('pipe-1', event)
+
+    const questions = usePipelineStore.getState().questions.get('pipe-1')
+    expect(questions).toHaveLength(1)
+    expect(questions?.[0]?.qid).toBe('auto-deploy')
+    expect(questions?.[0]?.text).toBe('Proceed with deployment?')
+    expect(questions?.[0]?.question_type).toBe('confirmation')
+  })
+
+  it('clears matching question on interview_completed', () => {
+    const pipeline: PipelineSummary = {
+      id: 'pipe-1',
+      status: 'running',
+      started_at: '2024-01-15T10:00:00Z',
+      completed_nodes: [],
+      current_node: 'interview-stage',
+    }
+    usePipelineStore.getState().setPipelines([pipeline])
+
+    // First add a question via interview_started
+    const startEvent: PipelineEvent = {
+      event: 'interview_started',
+      question: 'Proceed with deployment?',
+      stage: 'deploy',
+    }
+    usePipelineStore.getState().addEvent('pipe-1', startEvent)
+
+    // Now complete the interview - should remove matching question
+    const completeEvent: PipelineEvent = {
+      event: 'interview_completed',
+      question: 'Proceed with deployment?',
+      answer: 'yes',
+      duration: { __duration_ms: 5000 },
+    }
+    usePipelineStore.getState().addEvent('pipe-1', completeEvent)
+
+    const questions = usePipelineStore.getState().questions.get('pipe-1')
+    expect(questions).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Test 12: selectNode sets and clears selectedNodeId
+// ---------------------------------------------------------------------------
+describe('selectNode', () => {
+  it('sets the selected node id', () => {
+    usePipelineStore.getState().selectNode('plan')
+    expect(usePipelineStore.getState().selectedNodeId).toBe('plan')
+  })
+
+  it('can be cleared by setting null', () => {
+    usePipelineStore.getState().selectNode('plan')
+    usePipelineStore.getState().selectNode(null)
+    expect(usePipelineStore.getState().selectedNodeId).toBeNull()
   })
 })

@@ -10,6 +10,8 @@ interface PipelineState {
   activePipelineId: string | null
   events: Map<string, PipelineEvent[]>
   questions: Map<string, QuestionResponse[]>
+  selectedNodeId: string | null
+  sseStatus: 'connected' | 'reconnecting' | 'disconnected'
 }
 
 // ---------------------------------------------------------------------------
@@ -29,6 +31,10 @@ interface PipelineActions {
   removeQuestion: (pipelineId: string, qid: string) => void
   /** Delete the event list for a pipeline */
   clearPipelineEvents: (pipelineId: string) => void
+  /** Set or clear the selected graph node id */
+  selectNode: (nodeId: string | null) => void
+  /** Set the SSE connection status */
+  setSseStatus: (status: 'connected' | 'reconnecting' | 'disconnected') => void
 }
 
 // ---------------------------------------------------------------------------
@@ -41,6 +47,8 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set) =>
   activePipelineId: null,
   events: new Map(),
   questions: new Map(),
+  selectedNodeId: null,
+  sseStatus: 'disconnected',
 
   // --- actions ---
 
@@ -83,6 +91,26 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set) =>
         }
       }
 
+      // Handle interview events — update questions map
+      const newQ = new Map(state.questions)
+
+      if (event.event === 'interview_started') {
+        const prev = newQ.get(pipelineId) ?? []
+        const newQuestion = {
+          qid: `auto-${event.stage}`,
+          text: event.question,
+          question_type: 'confirmation' as const,
+          options: [],
+          created_at: new Date().toISOString(),
+        }
+        newQ.set(pipelineId, [...prev, newQuestion])
+        return { events: newEvents, pipelines: newPipelines, questions: newQ }
+      } else if (event.event === 'interview_completed') {
+        const prev = newQ.get(pipelineId) ?? []
+        newQ.set(pipelineId, prev.filter((q) => q.text !== event.question))
+        return { events: newEvents, pipelines: newPipelines, questions: newQ }
+      }
+
       return { events: newEvents, pipelines: newPipelines }
     })
   },
@@ -110,5 +138,13 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set) =>
       newEvents.delete(pipelineId)
       return { events: newEvents }
     })
+  },
+
+  selectNode: (nodeId) => {
+    set({ selectedNodeId: nodeId })
+  },
+
+  setSseStatus: (status) => {
+    set({ sseStatus: status })
   },
 }))

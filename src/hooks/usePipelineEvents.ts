@@ -11,6 +11,7 @@ import { usePipelineStore } from '../store/pipelines'
  * - Clears events for the old pipeline
  * - Opens a new SSE connection with ?since=0
  * - Dispatches each event to the Zustand store via addEvent
+ * - Reports connection lifecycle to the store via setSseStatus
  *
  * Cleans up the subscription on unmount.
  */
@@ -19,7 +20,7 @@ export function usePipelineEvents(pipelineId: string | null): void {
   const prevPipelineIdRef = useRef<string | null>(null)
 
   useEffect(() => {
-    const { addEvent, clearPipelineEvents } = usePipelineStore.getState()
+    const { addEvent, clearPipelineEvents, setSseStatus } = usePipelineStore.getState()
 
     // Close existing connection and clear events for the previous pipeline
     if (subscriptionRef.current !== null) {
@@ -37,6 +38,15 @@ export function usePipelineEvents(pipelineId: string | null): void {
       subscriptionRef.current = subscribeToPipeline(pipelineId, {
         onEvent: (event) => {
           addEvent(pipelineId, event)
+        },
+        onOpen: () => {
+          setSseStatus('connected')
+        },
+        onError: () => {
+          setSseStatus('reconnecting')
+        },
+        onFallback: () => {
+          setSseStatus('disconnected')
         },
       })
     }
