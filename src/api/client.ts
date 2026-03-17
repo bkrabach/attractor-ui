@@ -6,6 +6,7 @@ import type {
   QuestionsResponse,
   AnswerResponse,
   GraphResponse,
+  NodeResponseResult,
   ServerError,
 } from './types'
 
@@ -127,4 +128,9 @@ export function getCheckpoint(id: string): Promise<{ checkpoint: unknown }> {
 /** GET /api/pipelines/{id}/context — get pipeline context */
 export function getContext(id: string): Promise<Record<string, unknown>> {
   return get<Record<string, unknown>>(`/api/pipelines/${id}/context`)
+}
+
+/** GET /api/pipelines/{id}/nodes/{nodeId}/response — get LLM response artifact */
+export function getNodeResponse(id: string, nodeId: string): Promise<NodeResponseResult> {
+  return get<NodeResponseResult>(`/api/pipelines/${id}/nodes/${encodeURIComponent(nodeId)}/response`)
 }

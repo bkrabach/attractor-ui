@@ -110,6 +110,12 @@ export interface GraphResponse {
   format: string
 }
 
+/** Response body from GET /pipelines/{id}/nodes/{node_id}/response */
+export interface NodeResponseResult {
+  /** LLM response.md content, or null if not yet written */
+  content: string | null
+}
+
 // ---------------------------------------------------------------------------
 // Server error envelope  { "error": { code, message, status, diagnostics? } }
 // ---------------------------------------------------------------------------

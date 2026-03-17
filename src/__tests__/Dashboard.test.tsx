@@ -1,6 +1,21 @@
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import React from 'react'
+import type { PipelineSummary } from '../api/types'
+
+// ---------------------------------------------------------------------------
+// Hoisted store mock state — must be before vi.mock()
+// ---------------------------------------------------------------------------
+
+const mockActivePipelineId = vi.hoisted(() => ({ current: null as string | null }))
+const mockPipelines = vi.hoisted(() => ({ current: new Map<string, PipelineSummary>() }))
+
+vi.mock('../store/pipelines', () => ({
+  usePipelineStore: () => ({
+    activePipelineId: mockActivePipelineId.current,
+    pipelines: mockPipelines.current,
+  }),
+}))
 
 // ---------------------------------------------------------------------------
 // Mock react-resizable-panels — jsdom lacks ResizeObserver
@@ -61,6 +76,8 @@ describe('Dashboard', () => {
     capturedGroups.length = 0
     capturedPanelSizes.length = 0
     localStorage.clear()
+    mockActivePipelineId.current = null
+    mockPipelines.current = new Map()
   })
 
   it('renders all four pane components', () => {
@@ -91,6 +108,93 @@ describe('Dashboard', () => {
     render(<Dashboard />)
     const groupsWithCallback = capturedGroups.filter((g) => typeof g.onLayoutChanged === 'function')
     expect(groupsWithCallback.length).toBeGreaterThanOrEqual(1)
+  })
+
+  // ---------------------------------------------------------------------------
+  // UI-BUG-016: Terminal state banner on cancel/complete/fail
+  // ---------------------------------------------------------------------------
+
+  it('UI-BUG-016: shows cancelled banner when active pipeline is cancelled', () => {
+    mockActivePipelineId.current = 'pipe-1'
+    mockPipelines.current = new Map([
+      [
+        'pipe-1',
+        {
+          id: 'pipe-1',
+          status: 'cancelled',
+          started_at: new Date().toISOString(),
+          completed_nodes: [],
+          current_node: null,
+        },
+      ],
+    ])
+
+    render(<Dashboard />)
+
+    expect(screen.getByText(/pipeline cancelled/i)).toBeInTheDocument()
+  })
+
+  it('UI-BUG-016: shows completed banner when active pipeline is completed', () => {
+    mockActivePipelineId.current = 'pipe-2'
+    mockPipelines.current = new Map([
+      [
+        'pipe-2',
+        {
+          id: 'pipe-2',
+          status: 'completed',
+          started_at: new Date().toISOString(),
+          completed_nodes: ['nodeA'],
+          current_node: null,
+        },
+      ],
+    ])
+
+    render(<Dashboard />)
+
+    expect(screen.getByText(/pipeline completed/i)).toBeInTheDocument()
+  })
+
+  it('UI-BUG-016: shows failed banner when active pipeline is failed', () => {
+    mockActivePipelineId.current = 'pipe-3'
+    mockPipelines.current = new Map([
+      [
+        'pipe-3',
+        {
+          id: 'pipe-3',
+          status: 'failed',
+          started_at: new Date().toISOString(),
+          completed_nodes: [],
+          current_node: null,
+        },
+      ],
+    ])
+
+    render(<Dashboard />)
+
+    expect(screen.getByText(/pipeline failed/i)).toBeInTheDocument()
+  })
+
+  it('UI-BUG-016: does NOT show terminal banner when pipeline is running', () => {
+    mockActivePipelineId.current = 'pipe-4'
+    mockPipelines.current = new Map([
+      [
+        'pipe-4',
+        {
+          id: 'pipe-4',
+          status: 'running',
+          started_at: new Date().toISOString(),
+          completed_nodes: [],
+          current_node: 'nodeA',
+        },
+      ],
+    ])
+
+    render(<Dashboard />)
+
+    // No terminal banner for running pipelines
+    expect(screen.queryByText(/pipeline cancelled/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/pipeline completed/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/pipeline failed/i)).not.toBeInTheDocument()
   })
 
   it('saves layout to localStorage when onLayoutChanged fires', () => {

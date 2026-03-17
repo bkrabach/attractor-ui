@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { PipelineEvent } from '../api/types'
 
@@ -9,6 +9,9 @@ import type { PipelineEvent } from '../api/types'
 const mockSelectedNodeId = vi.hoisted(() => ({ current: null as string | null }))
 const mockActivePipelineId = vi.hoisted(() => ({ current: null as string | null }))
 const mockEvents = vi.hoisted(() => ({ current: new Map<string, PipelineEvent[]>() }))
+const mockGetNodeResponse = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ content: null }),
+)
 
 // ---------------------------------------------------------------------------
 // Module mocks
@@ -20,6 +23,10 @@ vi.mock('../store/pipelines', () => ({
     activePipelineId: mockActivePipelineId.current,
     events: mockEvents.current,
   }),
+}))
+
+vi.mock('../api/client', () => ({
+  getNodeResponse: mockGetNodeResponse,
 }))
 
 // Import after mocks are set up
@@ -34,6 +41,8 @@ describe('NodeDetails', () => {
     mockSelectedNodeId.current = null
     mockActivePipelineId.current = null
     mockEvents.current = new Map()
+    mockGetNodeResponse.mockClear()
+    mockGetNodeResponse.mockResolvedValue({ content: null })
   })
 
   it('shows placeholder when no node selected', () => {
@@ -73,6 +82,88 @@ describe('NodeDetails', () => {
     expect(screen.getByText('completed')).toBeInTheDocument()
     const badge = container.querySelector('.bg-green-500')
     expect(badge).toBeInTheDocument()
+  })
+
+  // ---------------------------------------------------------------------------
+  // UI-FEAT-012: LLM response display
+  // ---------------------------------------------------------------------------
+
+  it('UI-FEAT-012: fetches node response when completed node is selected', async () => {
+    // RED: current NodeDetails never calls getNodeResponse
+    mockSelectedNodeId.current = 'ExploreIdea'
+    mockActivePipelineId.current = 'pipe-1'
+    mockEvents.current = new Map([
+      [
+        'pipe-1',
+        [
+          {
+            event: 'stage_completed',
+            name: 'ExploreIdea',
+            index: 0,
+            duration: { __duration_ms: 5000 },
+          } as PipelineEvent,
+        ],
+      ],
+    ])
+    mockGetNodeResponse.mockResolvedValue({ content: 'The LLM produced this analysis.' })
+
+    render(<NodeDetails />)
+
+    await waitFor(() => {
+      expect(mockGetNodeResponse).toHaveBeenCalledWith('pipe-1', 'ExploreIdea')
+    })
+  })
+
+  it('UI-FEAT-012: shows LLM response content when loaded', async () => {
+    // RED: current NodeDetails does not display response.md content
+    mockSelectedNodeId.current = 'ExploreIdea'
+    mockActivePipelineId.current = 'pipe-1'
+    mockEvents.current = new Map([
+      [
+        'pipe-1',
+        [
+          {
+            event: 'stage_completed',
+            name: 'ExploreIdea',
+            index: 0,
+            duration: { __duration_ms: 5000 },
+          } as PipelineEvent,
+        ],
+      ],
+    ])
+    mockGetNodeResponse.mockResolvedValue({ content: 'The LLM produced this analysis.' })
+
+    render(<NodeDetails />)
+
+    await waitFor(() => {
+      expect(screen.getByText('The LLM produced this analysis.')).toBeInTheDocument()
+    })
+  })
+
+  it('UI-FEAT-012: shows waiting message when response not yet available', async () => {
+    mockSelectedNodeId.current = 'DraftPlan'
+    mockActivePipelineId.current = 'pipe-1'
+    mockEvents.current = new Map([
+      [
+        'pipe-1',
+        [
+          {
+            event: 'stage_started',
+            name: 'DraftPlan',
+            index: 1,
+          } as PipelineEvent,
+        ],
+      ],
+    ])
+    mockGetNodeResponse.mockResolvedValue({ content: null })
+
+    render(<NodeDetails />)
+
+    await waitFor(() => {
+      expect(mockGetNodeResponse).toHaveBeenCalledWith('pipe-1', 'DraftPlan')
+    })
+
+    expect(screen.getByText(/waiting for response/i)).toBeInTheDocument()
   })
 
   it('shows error message for failed nodes', () => {

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import type { PipelineEvent } from '../api/types'
 import { usePipelineStore } from '../store/pipelines'
@@ -35,28 +35,78 @@ function getNodeName(event: PipelineEvent): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// LLM progress helpers (UI-FEAT-013)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a set of node IDs that are currently running
+ * (stage_started without a subsequent stage_completed or stage_failed).
+ */
+function getRunningNodes(events: PipelineEvent[]): Set<string> {
+  const started = new Set<string>()
+  const finished = new Set<string>()
+  for (const event of events) {
+    const name = getNodeName(event)
+    if (!name) continue
+    if (event.event === 'stage_started') started.add(name)
+    else if (event.event === 'stage_completed' || event.event === 'stage_failed') {
+      finished.add(name)
+    }
+  }
+  for (const name of finished) started.delete(name)
+  return started
+}
+
+// ---------------------------------------------------------------------------
 // EventStream component
 // ---------------------------------------------------------------------------
 
 /**
  * Virtualized event log panel.
  *
- * UI-BUG-007: The previous implementation rendered ALL events as DOM nodes.
- * With 24K+ events from an infinite loop this killed the browser.
- *
- * This version uses react-virtuoso to only render the events visible in the
- * scroll viewport.  The total event count is always shown at the top.
- * Auto-scroll-to-bottom ("pinned") follows new events until the user scrolls
- * up manually.
+ * UI-BUG-007: Uses react-virtuoso to only render visible events.
+ * UI-FEAT-013: Running stages show a pulsing indicator + elapsed timer.
  */
 export function EventStream() {
-  const { activePipelineId, events, selectNode, sseStatus } = usePipelineStore()
+  const { activePipelineId, events, selectNode, sseStatus, questions } = usePipelineStore()
   const [pinned, setPinned] = useState(true)
   const virtuosoRef = useRef<VirtuosoHandle>(null)
+
+  // Tick state increments every second to re-render elapsed timers (UI-FEAT-013)
+  const [tick, setTick] = useState(0)
+  // Map from node name to the Date.now() when we first saw stage_started
+  const runningStartTimesRef = useRef<Map<string, number>>(new Map())
 
   const pipelineEvents: PipelineEvent[] = activePipelineId
     ? (events.get(activePipelineId) ?? [])
     : []
+
+  // Compute currently-running nodes
+  const runningNodes = getRunningNodes(pipelineEvents)
+
+  // Update runningStartTimes when running nodes change (UI-FEAT-013)
+  useEffect(() => {
+    const now = Date.now()
+    // Add new running nodes
+    for (const name of runningNodes) {
+      if (!runningStartTimesRef.current.has(name)) {
+        runningStartTimesRef.current.set(name, now)
+      }
+    }
+    // Remove nodes that are no longer running
+    for (const name of runningStartTimesRef.current.keys()) {
+      if (!runningNodes.has(name)) {
+        runningStartTimesRef.current.delete(name)
+      }
+    }
+  })
+
+  // Tick every second to update elapsed timers while there are running nodes
+  useEffect(() => {
+    if (runningNodes.size === 0) return
+    const id = setInterval(() => setTick((t) => t + 1), 1000)
+    return () => clearInterval(id)
+  }, [runningNodes.size])
 
   return (
     <div className="flex flex-col h-full bg-gray-950 overflow-hidden">
@@ -100,16 +150,54 @@ export function EventStream() {
           itemContent={(i, event) => {
             const { icon, colorClass } = getEventStyle(event)
             const nodeName = getNodeName(event)
+            const isRunningStart =
+              event.event === 'stage_started' &&
+              nodeName !== null &&
+              runningNodes.has(nodeName)
+
+            // Compute elapsed seconds for running nodes
+            const startTime = nodeName ? runningStartTimesRef.current.get(nodeName) : undefined
+            const elapsedMs = startTime !== undefined ? Date.now() - startTime : 0
+            const elapsedS = Math.floor(elapsedMs / 1000)
+            // Suppress unused tick warning — it's used to force re-renders
+            void tick
+
+            // Determine if a human gate is active for the current pipeline (UI-BUG-015)
+            const hasHumanQuestion = activePipelineId
+              ? (questions.get(activePipelineId)?.length ?? 0) > 0
+              : false
+
             return (
               <li
                 key={i}
                 className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-900 cursor-pointer text-sm list-none"
                 onClick={() => selectNode(nodeName)}
               >
-                <span className={colorClass}>{icon}</span>
+                {/* Pulsing dot for running stages (UI-FEAT-013) */}
+                {isRunningStart ? (
+                  <span
+                    className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse shrink-0"
+                    aria-label="LLM running"
+                  />
+                ) : (
+                  <span className={colorClass}>{icon}</span>
+                )}
                 <span className="text-gray-300">{event.event}</span>
                 {nodeName && (
                   <span className="text-gray-500 truncate">{nodeName}</span>
+                )}
+                {/* Elapsed timer + progress text for running stages (UI-FEAT-013, UI-BUG-015) */}
+                {isRunningStart && (
+                  <span className="ml-auto text-xs text-gray-500 shrink-0 flex items-center gap-1">
+                    {!hasHumanQuestion && elapsedS > 0 && <span>{elapsedS}s</span>}
+                    {hasHumanQuestion ? (
+                      <span className="text-orange-400 italic">Waiting for human input...</span>
+                    ) : (
+                      elapsedS >= 5 && (
+                        <span className="text-yellow-500 italic">LLM call in progress...</span>
+                      )
+                    )}
+                  </span>
                 )}
               </li>
             )

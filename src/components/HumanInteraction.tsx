@@ -1,7 +1,50 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { QuestionResponse } from '../api/types'
-import { submitAnswer } from '../api/client'
+import { submitAnswer, getNodeResponse } from '../api/client'
 import { usePipelineStore } from '../store/pipelines'
+
+// ---------------------------------------------------------------------------
+// PreviousNodeResponse — fetch and display the last completed node's LLM output
+// ---------------------------------------------------------------------------
+
+interface PreviousNodeResponseProps {
+  pipelineId: string
+  nodeId: string
+}
+
+function PreviousNodeResponse({ pipelineId, nodeId }: PreviousNodeResponseProps) {
+  const [content, setContent] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setContent(null)
+    getNodeResponse(pipelineId, nodeId)
+      .then((result) => {
+        if (!cancelled) {
+          setContent(result.content)
+          setLoading(false)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [pipelineId, nodeId])
+
+  if (loading) {
+    return (
+      <div className="text-xs text-gray-500 italic mb-2">Loading previous response...</div>
+    )
+  }
+  if (!content) return null
+  return (
+    <div className="mb-2 p-2 rounded bg-gray-800 border border-gray-700 text-xs text-gray-300 max-h-40 overflow-y-auto whitespace-pre-wrap">
+      {content}
+    </div>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // QuestionCard sub-component
@@ -10,10 +53,11 @@ import { usePipelineStore } from '../store/pipelines'
 interface QuestionCardProps {
   pipelineId: string
   question: QuestionResponse
+  lastCompletedNode: string | null
   onRemove: (pipelineId: string, qid: string) => void
 }
 
-function QuestionCard({ pipelineId, question, onRemove }: QuestionCardProps) {
+function QuestionCard({ pipelineId, question, lastCompletedNode, onRemove }: QuestionCardProps) {
   const [freeTextValue, setFreeTextValue] = useState('')
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
@@ -99,19 +143,25 @@ function QuestionCard({ pipelineId, question, onRemove }: QuestionCardProps) {
       )}
 
       {question.question_type === 'free_text' && (
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={freeTextValue}
-            onChange={(e) => setFreeTextValue(e.target.value)}
-            className="flex-1 px-2 py-1 text-sm rounded bg-gray-800 border border-gray-600 text-gray-200 focus:outline-none focus:border-blue-500"
-          />
-          <button
-            className="px-3 py-1 text-sm rounded bg-blue-700 hover:bg-blue-600 text-white"
-            onClick={() => handleSubmit(freeTextValue.trim())}
-          >
-            Submit
-          </button>
+        <div className="space-y-2">
+          {/* Show previous node's LLM response as context (UI-FEAT-014) */}
+          {lastCompletedNode && (
+            <PreviousNodeResponse pipelineId={pipelineId} nodeId={lastCompletedNode} />
+          )}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={freeTextValue}
+              onChange={(e) => setFreeTextValue(e.target.value)}
+              className="flex-1 px-2 py-1 text-sm rounded bg-gray-800 border border-gray-600 text-gray-200 focus:outline-none focus:border-blue-500"
+            />
+            <button
+              className="px-3 py-1 text-sm rounded bg-blue-700 hover:bg-blue-600 text-white"
+              onClick={() => handleSubmit(freeTextValue.trim())}
+            >
+              Submit
+            </button>
+          </div>
         </div>
       )}
 
@@ -127,13 +177,20 @@ function QuestionCard({ pipelineId, question, onRemove }: QuestionCardProps) {
 // ---------------------------------------------------------------------------
 
 export function HumanInteraction() {
-  const { activePipelineId, questions, removeQuestion } = usePipelineStore()
+  const { activePipelineId, questions, removeQuestion, pipelines } = usePipelineStore()
 
   const pendingQuestions: QuestionResponse[] = activePipelineId
     ? (questions.get(activePipelineId) ?? [])
     : []
 
   const hasPending = pendingQuestions.length > 0
+
+  // Get the last completed node for the active pipeline (UI-FEAT-014)
+  const activePipeline = activePipelineId ? pipelines.get(activePipelineId) : undefined
+  const completedNodes = activePipeline?.completed_nodes ?? []
+  const lastCompletedNode = completedNodes.length > 0
+    ? completedNodes[completedNodes.length - 1]
+    : null
 
   return (
     <div
@@ -157,6 +214,7 @@ export function HumanInteraction() {
               key={q.qid}
               pipelineId={activePipelineId!}
               question={q}
+              lastCompletedNode={lastCompletedNode}
               onRemove={removeQuestion}
             />
           ))

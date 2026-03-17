@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { QuestionResponse } from '../api/types'
+import type { QuestionResponse, PipelineSummary } from '../api/types'
 
 // ---------------------------------------------------------------------------
 // Hoisted mutable mock state — must be defined before vi.mock() calls
@@ -10,6 +10,7 @@ import type { QuestionResponse } from '../api/types'
 const mockActivePipelineId = vi.hoisted(() => ({ current: null as string | null }))
 const mockQuestions = vi.hoisted(() => ({ current: new Map<string, QuestionResponse[]>() }))
 const mockRemoveQuestion = vi.hoisted(() => vi.fn())
+const mockPipelines = vi.hoisted(() => ({ current: new Map<string, PipelineSummary>() }))
 
 // ---------------------------------------------------------------------------
 // Module mocks
@@ -20,13 +21,16 @@ vi.mock('../store/pipelines', () => ({
     activePipelineId: mockActivePipelineId.current,
     questions: mockQuestions.current,
     removeQuestion: mockRemoveQuestion,
+    pipelines: mockPipelines.current,
   }),
 }))
 
 const mockSubmitAnswer = vi.hoisted(() => vi.fn())
+const mockGetNodeResponse = vi.hoisted(() => vi.fn())
 
 vi.mock('../api/client', () => ({
   submitAnswer: mockSubmitAnswer,
+  getNodeResponse: mockGetNodeResponse,
 }))
 
 // Import after mocks are set up
@@ -43,6 +47,9 @@ describe('HumanInteraction', () => {
     mockRemoveQuestion.mockClear()
     mockSubmitAnswer.mockClear()
     mockSubmitAnswer.mockResolvedValue({ status: 'ok' })
+    mockPipelines.current = new Map()
+    mockGetNodeResponse.mockClear()
+    mockGetNodeResponse.mockResolvedValue({ content: null })
   })
 
   it('shows empty state when no pending questions', () => {
@@ -180,6 +187,105 @@ describe('HumanInteraction', () => {
       expect(mockSubmitAnswer).toHaveBeenCalledWith('pipe-1', 'q-3', 'opt-a')
       expect(mockRemoveQuestion).toHaveBeenCalledWith('pipe-1', 'q-3')
     })
+  })
+
+  // ---------------------------------------------------------------------------
+  // UI-FEAT-014: Show previous node LLM response above freeform question input
+  // ---------------------------------------------------------------------------
+
+  it('UI-FEAT-014: displays previous LLM response above free_text input when completed nodes exist', async () => {
+    // When a free_text question is shown, the component should fetch and display
+    // the last completed node's LLM response so the user has context to answer.
+    mockActivePipelineId.current = 'pipe-1'
+    const question: QuestionResponse = {
+      qid: 'q-ft',
+      text: 'What direction should we go?',
+      question_type: 'free_text',
+      options: [],
+      created_at: new Date().toISOString(),
+    }
+    mockQuestions.current = new Map([['pipe-1', [question]]])
+    mockPipelines.current = new Map([
+      [
+        'pipe-1',
+        {
+          id: 'pipe-1',
+          status: 'running',
+          started_at: new Date().toISOString(),
+          completed_nodes: ['ExploreIdea'],
+          current_node: 'BrainstormWithHuman',
+        },
+      ],
+    ])
+    mockGetNodeResponse.mockResolvedValue({ content: 'The LLM analyzed the idea and found it promising.' })
+
+    render(<HumanInteraction />)
+
+    await waitFor(() => {
+      expect(screen.getByText('The LLM analyzed the idea and found it promising.')).toBeInTheDocument()
+    })
+    expect(mockGetNodeResponse).toHaveBeenCalledWith('pipe-1', 'ExploreIdea')
+  })
+
+  it('UI-FEAT-014: shows loading state while fetching previous LLM response', async () => {
+    mockActivePipelineId.current = 'pipe-1'
+    const question: QuestionResponse = {
+      qid: 'q-ft',
+      text: 'What direction?',
+      question_type: 'free_text',
+      options: [],
+      created_at: new Date().toISOString(),
+    }
+    mockQuestions.current = new Map([['pipe-1', [question]]])
+    mockPipelines.current = new Map([
+      [
+        'pipe-1',
+        {
+          id: 'pipe-1',
+          status: 'running',
+          started_at: new Date().toISOString(),
+          completed_nodes: ['ExploreIdea'],
+          current_node: null,
+        },
+      ],
+    ])
+    // Keep the promise pending so we see the loading state
+    mockGetNodeResponse.mockImplementation(() => new Promise(() => {}))
+
+    render(<HumanInteraction />)
+
+    // Should show a loading indicator while fetching
+    expect(screen.getByText('Loading previous response...')).toBeInTheDocument()
+  })
+
+  it('UI-FEAT-014: does not fetch response when no completed nodes', () => {
+    mockActivePipelineId.current = 'pipe-1'
+    const question: QuestionResponse = {
+      qid: 'q-ft',
+      text: 'What direction?',
+      question_type: 'free_text',
+      options: [],
+      created_at: new Date().toISOString(),
+    }
+    mockQuestions.current = new Map([['pipe-1', [question]]])
+    mockPipelines.current = new Map([
+      [
+        'pipe-1',
+        {
+          id: 'pipe-1',
+          status: 'running',
+          started_at: new Date().toISOString(),
+          completed_nodes: [], // no completed nodes
+          current_node: null,
+        },
+      ],
+    ])
+
+    render(<HumanInteraction />)
+
+    // No loading state, no response display, no fetch
+    expect(screen.queryByText('Loading previous response...')).not.toBeInTheDocument()
+    expect(mockGetNodeResponse).not.toHaveBeenCalled()
   })
 
   it('has orange pulsing border when question is pending', () => {

@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import type { PipelineEvent } from '../api/types'
+import { getNodeResponse } from '../api/client'
 import { usePipelineStore } from '../store/pipelines'
 
 // ---------------------------------------------------------------------------
@@ -55,6 +57,21 @@ const STATUS_BADGE_CLASSES: Record<NodeStatus, string> = {
 
 export function NodeDetails() {
   const { selectedNodeId, activePipelineId, events } = usePipelineStore()
+  const [responseContent, setResponseContent] = useState<string | null | undefined>(undefined)
+
+  // Fetch LLM response.md whenever a node is selected (UI-FEAT-012)
+  useEffect(() => {
+    if (!selectedNodeId || !activePipelineId) {
+      setResponseContent(undefined)
+      return
+    }
+
+    setResponseContent(undefined) // show loading state
+
+    getNodeResponse(activePipelineId, selectedNodeId)
+      .then(({ content }) => setResponseContent(content))
+      .catch(() => setResponseContent(null))
+  }, [selectedNodeId, activePipelineId])
 
   if (!selectedNodeId) {
     return (
@@ -73,10 +90,10 @@ export function NodeDetails() {
   const errorMessage = getErrorMessage(pipelineEvents, selectedNodeId)
 
   return (
-    <div className="p-4">
-      <h2 className="text-lg font-semibold text-gray-200 mb-3">{selectedNodeId}</h2>
+    <div className="p-4 flex flex-col gap-2 overflow-y-auto h-full">
+      <h2 className="text-lg font-semibold text-gray-200">{selectedNodeId}</h2>
 
-      <div className="mb-2">
+      <div>
         <span
           className={`inline-block px-2 py-0.5 rounded text-xs text-white ${STATUS_BADGE_CLASSES[status]}`}
         >
@@ -85,13 +102,31 @@ export function NodeDetails() {
       </div>
 
       {durationMs !== null && (
-        <div className="text-sm text-gray-400 mb-2">
+        <div className="text-sm text-gray-400">
           Duration: {(durationMs / 1000).toFixed(2)}s
         </div>
       )}
 
       {errorMessage && (
-        <div className="text-sm text-red-400 mb-2">{errorMessage}</div>
+        <div className="text-sm text-red-400">{errorMessage}</div>
+      )}
+
+      {/* LLM response section (UI-FEAT-012) */}
+      {(status === 'completed' || status === 'running') && (
+        <div className="mt-2">
+          <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+            Response
+          </h3>
+          {responseContent === undefined ? (
+            <div className="text-xs text-gray-500 italic">Loading...</div>
+          ) : responseContent === null ? (
+            <div className="text-xs text-gray-500 italic">Waiting for response...</div>
+          ) : (
+            <pre className="text-xs text-gray-300 whitespace-pre-wrap bg-gray-800 rounded p-2 max-h-80 overflow-y-auto">
+              {responseContent}
+            </pre>
+          )}
+        </div>
       )}
     </div>
   )

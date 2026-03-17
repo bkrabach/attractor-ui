@@ -240,6 +240,108 @@ describe('GraphPane', () => {
     })
   })
 
+  // ---------------------------------------------------------------------------
+  // UI-BUG-012: Architectural fixes — CSS transform zoom + drag panning
+  // ---------------------------------------------------------------------------
+
+  it('UI-BUG-012: zoom-in button changes CSS transform scale, not container width', async () => {
+    // RED: current code resizes the container div (width: 125%) instead of
+    // using CSS transform scale.  This test verifies the correct behaviour.
+    const user = userEvent.setup()
+    mockActivePipelineId.current = 'pipe-1'
+
+    const { container } = render(<GraphPane />)
+
+    await waitFor(() => {
+      expect(container.querySelector('svg')).toBeInTheDocument()
+    })
+
+    // Click zoom in
+    const zoomIn = screen.getByRole('button', { name: /zoom in/i })
+    await user.click(zoomIn)
+
+    // The inner scaler div should use CSS transform, not width
+    // Find a div that has a transform style (the SVG wrapper scaler)
+    const scalerDiv = container.querySelector('[style*="scale"]')
+    expect(scalerDiv).toBeInTheDocument()
+
+    // The transform must contain scale(...), not have width > 100%
+    const style = (scalerDiv as HTMLElement)?.style
+    expect(style?.transform).toMatch(/scale/)
+    // Container width should NOT be changed to > 100% (old broken approach)
+    const oldWidthApproach = container.querySelector('[style*="width: 125"]')
+    expect(oldWidthApproach).not.toBeInTheDocument()
+  })
+
+  it('UI-BUG-012: graph inner div has cursor:grab for drag panning support', async () => {
+    // RED: current code has no cursor style on the graph container.
+    mockActivePipelineId.current = 'pipe-1'
+
+    const { container } = render(<GraphPane />)
+
+    await waitFor(() => {
+      expect(container.querySelector('svg')).toBeInTheDocument()
+    })
+
+    // The SVG scaler/wrapper div should have cursor:grab (or grabbing when dragging)
+    const grabDiv = container.querySelector('[style*="grab"]')
+    expect(grabDiv).toBeInTheDocument()
+  })
+
+  // ---------------------------------------------------------------------------
+  // UI-BUG-014: Text fill — only replace black text, not all fills
+  // ---------------------------------------------------------------------------
+
+  it('UI-BUG-014: pending node text fill is NOT #e2e8f0 (all-white was unreadable on colored boxes)', async () => {
+    // The old code replaced ALL text fills with #e2e8f0 (light gray), which made
+    // node labels unreadable on green/yellow colored boxes.
+    // Fix: only replace black/#000000 text with #9ca3af (medium gray).
+    // applyNodeColorsToSvg handles colored-node text separately.
+    mockActivePipelineId.current = 'pipe-1'
+    mockEvents.current = new Map([['pipe-1', []]]) // no status events → pending
+    mockRenderString.mockReturnValue(
+      '<svg><g id="node1"><title>nodeA</title><polygon fill="#ffffff" stroke="black"/><text fill="black">nodeA</text></g></svg>',
+    )
+
+    const { container } = render(<GraphPane />)
+
+    await waitFor(() => {
+      expect(container.querySelector('svg')).toBeInTheDocument()
+    })
+
+    const text = container.querySelector('g text')
+    const fill = text?.getAttribute('fill')
+    // Must NOT be the old all-white color that was illegible on colored nodes
+    expect(fill).not.toBe('#e2e8f0')
+    // Should be a readable medium gray
+    expect(fill).toBe('#9ca3af')
+  })
+
+  // ---------------------------------------------------------------------------
+  // UI-BUG-013: SVG white background polygon → transparent
+  // ---------------------------------------------------------------------------
+
+  it('UI-BUG-013: Graphviz white background polygon fill becomes transparent', async () => {
+    // Graphviz outputs <polygon fill="white" stroke="none"> as the first element
+    // to create the graph background. This must become fill="transparent" so the
+    // dark container bg-gray-900 shows through.
+    mockActivePipelineId.current = 'pipe-1'
+    mockRenderString.mockReturnValue(
+      '<svg><polygon fill="white" stroke="none" points="0,0 100,0 100,100 0,100"/><g id="node1"><title>nodeA</title></g></svg>',
+    )
+
+    const { container } = render(<GraphPane />)
+
+    await waitFor(() => {
+      expect(container.querySelector('svg')).toBeInTheDocument()
+    })
+
+    // The white polygon should now have fill="transparent", not fill="white"
+    const polygon = container.querySelector('polygon')
+    expect(polygon?.getAttribute('fill')).toBe('transparent')
+    expect(polygon?.getAttribute('fill')).not.toBe('white')
+  })
+
   it('calls selectNode when a node g element is clicked', async () => {
     const user = userEvent.setup()
     mockActivePipelineId.current = 'pipe-1'
