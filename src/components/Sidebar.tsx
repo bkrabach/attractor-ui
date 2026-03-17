@@ -77,11 +77,16 @@ export function Sidebar() {
               const isActive = pipeline.id === activePipelineId
               return (
                 <li key={pipeline.id}>
-                  <button
-                    className={`w-full text-left p-3 text-sm flex items-center gap-2 hover:bg-gray-800 transition-colors${
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    className={`w-full text-left p-3 text-sm flex items-center gap-2 hover:bg-gray-800 transition-colors cursor-pointer${
                       isActive ? ' bg-gray-800 border-l-2 border-l-blue-500' : ''
                     }`}
                     onClick={() => setActivePipeline(pipeline.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') setActivePipeline(pipeline.id)
+                    }}
                   >
                     <span
                       className={`w-2 h-2 rounded-full flex-shrink-0 ${statusDotClass(pipeline.status)}`}
@@ -137,7 +142,7 @@ export function Sidebar() {
                         </svg>
                       </button>
                     ) : null}
-                  </button>
+                  </div>
                 </li>
               )
             })}

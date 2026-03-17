@@ -100,8 +100,9 @@ describe('Sidebar', () => {
     ])
     render(<Sidebar />)
     // 'pipeline-id-1234'.slice(0, 12) === 'pipeline-id-'
-    const button = screen.getByText('pipeline-id-').closest('button')!
-    await user.click(button)
+    // Pipeline item is now a <div role="button">, not a <button>
+    const item = screen.getByText('pipeline-id-').closest('[role="button"]')!
+    await user.click(item)
     expect(mockSetActivePipeline).toHaveBeenCalledWith('pipeline-id-1234')
   })
 
@@ -184,6 +185,19 @@ describe('Sidebar', () => {
     expect(screen.queryByText(/cancel this pipeline\?/i)).not.toBeInTheDocument()
   })
 
+  it('cancel button is not nested inside another button (UI-BUG-010)', () => {
+    // Invalid HTML: a <button> inside a <button>. Fix: outer item must be a <div>.
+    mockStoreState.pipelines = new Map([
+      ['running-pipeline-1', { id: 'running-pipeline-1', status: 'running' as const, started_at: '2024-01-04T10:00:00Z', completed_nodes: [], current_node: null }],
+    ])
+    render(<Sidebar />)
+
+    const cancelBtn = screen.getByLabelText('Cancel pipeline')
+    // The cancel button should NOT have a <button> ancestor (other than itself)
+    const buttonAncestor = cancelBtn.parentElement?.closest('button')
+    expect(buttonAncestor).toBeNull()
+  })
+
   it('shows status dots with appropriate colors for each status', () => {
     mockStoreState.pipelines = new Map([
       // running-pipe (12 chars from 'running-pipeline-1')
@@ -197,15 +211,15 @@ describe('Sidebar', () => {
     ])
     render(<Sidebar />)
 
-    // Each pipeline button should have a status dot with the correct color class
+    // Each pipeline item is a <div role="button">, not a <button> (UI-BUG-010 fix)
     // 'running-pipeline-1'.slice(0, 12) === 'running-pipe'
-    const runningEntry = screen.getByText('running-pipe').closest('button')!
+    const runningEntry = screen.getByText('running-pipe').closest('[role="button"]')!
     // 'completed-pipeline'.slice(0, 12) === 'completed-pi'
-    const completedEntry = screen.getByText('completed-pi').closest('button')!
+    const completedEntry = screen.getByText('completed-pi').closest('[role="button"]')!
     // 'failed-pipeline-xx'.slice(0, 12) === 'failed-pipel'
-    const failedEntry = screen.getByText('failed-pipel').closest('button')!
+    const failedEntry = screen.getByText('failed-pipel').closest('[role="button"]')!
     // 'cancelled-pipelin'.slice(0, 12) === 'cancelled-pi'
-    const cancelledEntry = screen.getByText('cancelled-pi').closest('button')!
+    const cancelledEntry = screen.getByText('cancelled-pi').closest('[role="button"]')!
 
     expect(runningEntry.querySelector('.bg-yellow-400')).toBeInTheDocument()
     expect(completedEntry.querySelector('.bg-green-400')).toBeInTheDocument()
