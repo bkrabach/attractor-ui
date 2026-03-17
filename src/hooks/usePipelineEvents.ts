@@ -4,6 +4,9 @@ import type { SubscriptionHandle } from '../api/sse'
 import { getQuestions } from '../api/client'
 import { usePipelineStore } from '../store/pipelines'
 
+/** How often (ms) to poll the questions endpoint while an SSE session is active. */
+const QUESTION_POLL_INTERVAL_MS = 2000
+
 /**
  * React hook that subscribes to a pipeline's SSE event stream.
  *
@@ -15,12 +18,15 @@ import { usePipelineStore } from '../store/pipelines'
  * - Reports connection lifecycle to the store via setSseStatus
  * - On interview_started, fetches real question data from the API so
  *   the HumanInteraction pane shows the correct qid, type, and options
+ * - Polls GET /questions every 2 s as a reliable fallback, because the
+ *   server does not currently emit interview_started SSE events
  *
  * Cleans up the subscription on unmount.
  */
 export function usePipelineEvents(pipelineId: string | null): void {
   const subscriptionRef = useRef<SubscriptionHandle | null>(null)
   const prevPipelineIdRef = useRef<string | null>(null)
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     const { addEvent, clearPipelineEvents, setSseStatus, setQuestions } =
@@ -30,6 +36,10 @@ export function usePipelineEvents(pipelineId: string | null): void {
     if (subscriptionRef.current !== null) {
       subscriptionRef.current.close()
       subscriptionRef.current = null
+    }
+    if (pollIntervalRef.current !== null) {
+      clearInterval(pollIntervalRef.current)
+      pollIntervalRef.current = null
     }
     if (prevPipelineIdRef.current !== null) {
       clearPipelineEvents(prevPipelineIdRef.current)
@@ -69,6 +79,24 @@ export function usePipelineEvents(pipelineId: string | null): void {
           setSseStatus('disconnected')
         },
       })
+
+      // Poll for pending questions periodically.
+      //
+      // The server's pipeline engine does not currently emit
+      // PipelineEvent::InterviewStarted, so the interview_started SSE handler
+      // above is dead code for now.  Polling every 2 s is the reliable path
+      // that ensures questions appear in the UI as soon as they are registered
+      // on the server.
+      pollIntervalRef.current = setInterval(() => {
+        const { setQuestions: setQ } = usePipelineStore.getState()
+        getQuestions(pipelineId)
+          .then(({ questions }) => {
+            setQ(pipelineId, questions)
+          })
+          .catch(() => {
+            // Best-effort: network blip or pipeline gone — silently skip.
+          })
+      }, QUESTION_POLL_INTERVAL_MS)
     }
 
     // Cleanup on unmount or before next effect run
@@ -76,6 +104,10 @@ export function usePipelineEvents(pipelineId: string | null): void {
       if (subscriptionRef.current !== null) {
         subscriptionRef.current.close()
         subscriptionRef.current = null
+      }
+      if (pollIntervalRef.current !== null) {
+        clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
       }
     }
   }, [pipelineId])

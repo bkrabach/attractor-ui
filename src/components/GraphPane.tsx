@@ -15,12 +15,26 @@ export function GraphPane() {
   const [svgContent, setSvgContent] = useState<string>('')
   const [renderError, setRenderError] = useState<string | null>(null)
 
+  /**
+   * Inject `rankdir=TB;` into a DOT source string to force top-to-bottom
+   * (vertical) layout.  Handles graphs that already contain a `rankdir`
+   * directive by replacing it rather than duplicating it.
+   */
+  const injectRankdirTB = (dot: string): string => {
+    if (/rankdir\s*=/.test(dot)) {
+      // Replace any existing rankdir value with TB
+      return dot.replace(/rankdir\s*=\s*\w+/g, 'rankdir=TB')
+    }
+    // Insert after the first opening brace of the graph declaration
+    return dot.replace('{', '{\n  rankdir=TB;')
+  }
+
   // Fetch DOT source and render SVG using @viz-js/viz
   const renderDot = useCallback(async (pipelineId: string) => {
     setRenderError(null)
     const { dot } = await getGraph(pipelineId)
     const viz = await instance()
-    const svg = viz.renderString(dot, { format: 'svg' })
+    const svg = viz.renderString(injectRankdirTB(dot), { format: 'svg' })
     setSvgContent(svg)
   }, [])
 
@@ -78,6 +92,30 @@ export function GraphPane() {
     updateNodeColors(containerRef.current, pipelineEvents)
   }, [events, activePipelineId, updateNodeColors, svgContent])
 
+  // Effect: apply dark-theme palette to the SVG after each render
+  useEffect(() => {
+    if (!containerRef.current || !svgContent) return
+    const svgEl = containerRef.current.querySelector('svg')
+    if (!svgEl) return
+
+    // Transparent background — let the container's bg-gray-900 show through
+    svgEl.style.background = 'transparent'
+
+    // Lighten all text labels
+    svgEl.querySelectorAll('text').forEach((el) => {
+      el.setAttribute('fill', '#e2e8f0')
+    })
+
+    // Lighten edge paths and arrow-heads (Graphviz wraps edges in <g class="edge">)
+    svgEl.querySelectorAll('.edge path').forEach((el) => {
+      el.setAttribute('stroke', '#9ca3af')
+    })
+    svgEl.querySelectorAll('.edge polygon').forEach((el) => {
+      el.setAttribute('stroke', '#9ca3af')
+      el.setAttribute('fill', '#9ca3af')
+    })
+  }, [svgContent])
+
   // Handle click: find the <g> node element and call selectNode with its title
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -110,7 +148,7 @@ export function GraphPane() {
       )}
       <div
         ref={containerRef}
-        className="flex-1 overflow-auto"
+        className="flex-1 overflow-auto bg-gray-900"
         dangerouslySetInnerHTML={{ __html: svgContent }}
         onClick={handleClick}
       />

@@ -129,7 +129,7 @@ describe('Sidebar', () => {
     expect(completedItem.querySelector('[aria-label="Cancel pipeline"]')).not.toBeInTheDocument()
   })
 
-  it('calls cancelPipeline and setPipelineStatus when cancel button is clicked', async () => {
+  it('shows a confirmation prompt when cancel button is clicked (UI-FEAT-006)', async () => {
     const user = userEvent.setup()
     mockStoreState.pipelines = new Map([
       ['running-pipeline-1', { id: 'running-pipeline-1', status: 'running' as const, started_at: '2024-01-04T10:00:00Z', completed_nodes: [], current_node: null }],
@@ -139,10 +139,49 @@ describe('Sidebar', () => {
     const cancelBtn = screen.getByLabelText('Cancel pipeline')
     await user.click(cancelBtn)
 
+    // First click should NOT call cancelPipeline — it shows a confirmation
+    expect(mockCancelPipeline).not.toHaveBeenCalled()
+
+    // Confirmation prompt should be visible
+    expect(screen.getByText(/cancel this pipeline\?/i)).toBeInTheDocument()
+  })
+
+  it('calls cancelPipeline and setPipelineStatus when cancel is confirmed (UI-FEAT-006)', async () => {
+    const user = userEvent.setup()
+    mockStoreState.pipelines = new Map([
+      ['running-pipeline-1', { id: 'running-pipeline-1', status: 'running' as const, started_at: '2024-01-04T10:00:00Z', completed_nodes: [], current_node: null }],
+    ])
+    render(<Sidebar />)
+
+    // Open confirmation
+    await user.click(screen.getByLabelText('Cancel pipeline'))
+
+    // Confirm by clicking the Yes button
+    await user.click(screen.getByRole('button', { name: /^yes$/i }))
+
     await waitFor(() => {
       expect(mockCancelPipeline).toHaveBeenCalledWith('running-pipeline-1')
       expect(mockSetPipelineStatus).toHaveBeenCalledWith('running-pipeline-1', 'cancelled')
     })
+  })
+
+  it('does not call cancelPipeline when cancel confirmation is dismissed (UI-FEAT-006)', async () => {
+    const user = userEvent.setup()
+    mockStoreState.pipelines = new Map([
+      ['running-pipeline-1', { id: 'running-pipeline-1', status: 'running' as const, started_at: '2024-01-04T10:00:00Z', completed_nodes: [], current_node: null }],
+    ])
+    render(<Sidebar />)
+
+    // Open confirmation
+    await user.click(screen.getByLabelText('Cancel pipeline'))
+
+    // Dismiss by clicking No
+    await user.click(screen.getByRole('button', { name: /^no$/i }))
+
+    expect(mockCancelPipeline).not.toHaveBeenCalled()
+
+    // Confirmation prompt should be gone
+    expect(screen.queryByText(/cancel this pipeline\?/i)).not.toBeInTheDocument()
   })
 
   it('shows status dots with appropriate colors for each status', () => {

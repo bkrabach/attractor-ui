@@ -25,6 +25,8 @@ function statusDotClass(
 
 export function Sidebar() {
   const [dialogOpen, setDialogOpen] = useState(false)
+  /** ID of the pipeline whose cancel is awaiting confirmation, or null. */
+  const [confirmingCancelId, setConfirmingCancelId] = useState<string | null>(null)
 
   const { pipelines, activePipelineId, setActivePipeline, setPipelineStatus } =
     usePipelineStore()
@@ -37,14 +39,27 @@ export function Sidebar() {
     (a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime(),
   )
 
-  const handleCancel = async (id: string, e: React.MouseEvent) => {
+  const handleCancelClick = (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
+    setConfirmingCancelId(id)
+  }
+
+  const handleCancelConfirm = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!confirmingCancelId) return
+    const id = confirmingCancelId
+    setConfirmingCancelId(null)
     try {
       await cancelPipeline(id)
       setPipelineStatus(id, 'cancelled')
     } catch {
       // Silently ignore — pipeline may have already finished
     }
+  }
+
+  const handleCancelDeny = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setConfirmingCancelId(null)
   }
 
   return (
@@ -82,11 +97,33 @@ export function Sidebar() {
                         </span>
                       )}
                     </span>
-                    {pipeline.status === 'running' && (
+                    {pipeline.status === 'running' && confirmingCancelId === pipeline.id ? (
+                      /* Inline confirmation prompt */
+                      <span
+                        className="flex items-center gap-1 ml-1"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <span className="text-xs text-gray-300 whitespace-nowrap">
+                          Cancel this pipeline?
+                        </span>
+                        <button
+                          className="text-xs text-red-400 hover:text-red-300 font-medium"
+                          onClick={handleCancelConfirm}
+                        >
+                          Yes
+                        </button>
+                        <button
+                          className="text-xs text-gray-400 hover:text-gray-300 font-medium"
+                          onClick={handleCancelDeny}
+                        >
+                          No
+                        </button>
+                      </span>
+                    ) : pipeline.status === 'running' ? (
                       <button
                         aria-label="Cancel pipeline"
                         className="ml-1 flex-shrink-0 text-gray-400 hover:text-red-400 transition-colors"
-                        onClick={(e) => handleCancel(pipeline.id, e)}
+                        onClick={(e) => handleCancelClick(pipeline.id, e)}
                       >
                         {/* Stop / square icon */}
                         <svg
@@ -99,7 +136,7 @@ export function Sidebar() {
                           <rect x="4" y="4" width="12" height="12" rx="1" />
                         </svg>
                       </button>
-                    )}
+                    ) : null}
                   </button>
                 </li>
               )

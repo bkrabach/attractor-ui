@@ -83,11 +83,38 @@ describe('GraphPane', () => {
     render(<GraphPane />)
 
     await waitFor(() => {
+      // The DOT string passed to renderString may be modified (e.g. rankdir
+      // injection) so only verify the format option, not the exact DOT source.
       expect(mockRenderString).toHaveBeenCalledWith(
-        'digraph { a -> b }',
+        expect.any(String),
         { format: 'svg' },
       )
     })
+  })
+
+  it('injects rankdir=TB into the DOT source for vertical layout (UI-FEAT-004)', async () => {
+    mockActivePipelineId.current = 'pipe-1'
+
+    render(<GraphPane />)
+
+    await waitFor(() => {
+      const dotArg = mockRenderString.mock.calls[0]?.[0] as string
+      expect(dotArg).toContain('rankdir=TB')
+    })
+  })
+
+  it('graph container has dark background class (UI-FEAT-005)', async () => {
+    mockActivePipelineId.current = 'pipe-1'
+
+    const { container } = render(<GraphPane />)
+
+    await waitFor(() => {
+      expect(container.querySelector('svg')).toBeInTheDocument()
+    })
+
+    // The scrollable graph container should have a dark bg
+    const graphContainer = container.querySelector('.overflow-auto')
+    expect(graphContainer).toHaveClass('bg-gray-900')
   })
 
   it('applies green fill to completed nodes', async () => {
