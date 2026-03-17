@@ -106,6 +106,41 @@ describe('usePipelineEvents — question polling', () => {
     expect(mockSetQuestions).toHaveBeenCalledWith('pipe-1', fakeQuestions)
   })
 
+  it('does NOT call setQuestions again when questions are unchanged between polls (UI-BUG-005)', async () => {
+    const fakeQuestions = [
+      {
+        qid: 'q-1',
+        text: 'Continue?',
+        question_type: 'confirmation' as const,
+        options: [],
+        created_at: '2024-01-01T00:00:00Z',
+      },
+    ]
+    // Every poll returns the SAME question list
+    mockGetQuestions.mockResolvedValue({ questions: fakeQuestions })
+
+    renderHook(() => usePipelineEvents('pipe-1'))
+
+    // First poll fires at 2s
+    await act(async () => {
+      vi.advanceTimersByTime(2000)
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(mockSetQuestions).toHaveBeenCalledTimes(1)
+
+    // Second poll fires at 4s — same data returned
+    await act(async () => {
+      vi.advanceTimersByTime(2000)
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    // setQuestions must NOT be called again since questions are identical
+    expect(mockSetQuestions).toHaveBeenCalledTimes(1)
+  })
+
   it('clears the poll interval when pipelineId becomes null', async () => {
     const { rerender } = renderHook(
       ({ id }: { id: string | null }) => usePipelineEvents(id),

@@ -3,9 +3,24 @@ import { subscribeToPipeline } from '../api/sse'
 import type { SubscriptionHandle } from '../api/sse'
 import { getQuestions } from '../api/client'
 import { usePipelineStore } from '../store/pipelines'
+import type { QuestionResponse } from '../api/types'
 
 /** How often (ms) to poll the questions endpoint while an SSE session is active. */
 const QUESTION_POLL_INTERVAL_MS = 2000
+
+/**
+ * Fast equality check for two question arrays.
+ *
+ * Compares length and qid of each item.  Order matters — questions are
+ * displayed in arrival order, so a reorder is treated as a change.
+ */
+function questionsEqual(a: QuestionResponse[], b: QuestionResponse[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].qid !== b[i].qid) return false
+  }
+  return true
+}
 
 /**
  * React hook that subscribes to a pipeline's SSE event stream.
@@ -21,12 +36,19 @@ const QUESTION_POLL_INTERVAL_MS = 2000
  * - Polls GET /questions every 2 s as a reliable fallback, because the
  *   server does not currently emit interview_started SSE events
  *
+ * Performance: only updates the Zustand store when the question list
+ * actually changes (prevents cascade re-renders on every poll tick).
+ * Stops polling once the pipeline reaches a terminal status (completed,
+ * failed, cancelled) — human-gate questions only arise while running.
+ *
  * Cleans up the subscription on unmount.
  */
 export function usePipelineEvents(pipelineId: string | null): void {
   const subscriptionRef = useRef<SubscriptionHandle | null>(null)
   const prevPipelineIdRef = useRef<string | null>(null)
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  /** Tracks the last questions array written to the store for this pipeline. */
+  const prevQuestionsRef = useRef<QuestionResponse[]>([])
 
   useEffect(() => {
     const { addEvent, clearPipelineEvents, setSseStatus, setQuestions } =
@@ -46,6 +68,7 @@ export function usePipelineEvents(pipelineId: string | null): void {
     }
 
     prevPipelineIdRef.current = pipelineId
+    prevQuestionsRef.current = []
 
     // Open new SSE connection if pipelineId is provided
     if (pipelineId !== null) {
@@ -61,7 +84,10 @@ export function usePipelineEvents(pipelineId: string | null): void {
           if (event.event === 'interview_started') {
             getQuestions(pipelineId)
               .then(({ questions }) => {
-                setQuestions(pipelineId, questions)
+                if (!questionsEqual(prevQuestionsRef.current, questions)) {
+                  prevQuestionsRef.current = questions
+                  setQuestions(pipelineId, questions)
+                }
               })
               .catch(() => {
                 // Best-effort: if the fetch fails the synthetic placeholder
@@ -87,11 +113,33 @@ export function usePipelineEvents(pipelineId: string | null): void {
       // above is dead code for now.  Polling every 2 s is the reliable path
       // that ensures questions appear in the UI as soon as they are registered
       // on the server.
+      //
+      // Performance: skip the store update when the result is unchanged
+      // (avoids triggering React re-renders on every tick), and stop polling
+      // once the pipeline reaches a terminal status.
       pollIntervalRef.current = setInterval(() => {
-        const { setQuestions: setQ } = usePipelineStore.getState()
+        const state = usePipelineStore.getState()
+        const pipeline = state.pipelines?.get(pipelineId)
+
+        // Only poll while the pipeline is actively running.
+        // If the pipeline is known to be in a terminal state, stop the loop.
+        if (pipeline && pipeline.status !== 'running') {
+          if (pollIntervalRef.current !== null) {
+            clearInterval(pollIntervalRef.current)
+            pollIntervalRef.current = null
+          }
+          return
+        }
+
         getQuestions(pipelineId)
           .then(({ questions }) => {
-            setQ(pipelineId, questions)
+            // Only update the store when the question list actually changes.
+            // Unconditional updates create a new Map reference on every tick,
+            // triggering store-subscriber re-renders even when nothing changed.
+            if (!questionsEqual(prevQuestionsRef.current, questions)) {
+              prevQuestionsRef.current = questions
+              state.setQuestions(pipelineId, questions)
+            }
           })
           .catch(() => {
             // Best-effort: network blip or pipeline gone — silently skip.
