@@ -7,6 +7,7 @@ import type {
   AnswerResponse,
   GraphResponse,
   NodeResponseResult,
+  FileNode,
   ServerError,
 } from './types'
 
@@ -81,8 +82,13 @@ export function listPipelines(): Promise<PipelineSummary[]> {
 export function createPipeline(
   dot: string,
   context: Record<string, unknown>,
+  workingDir?: string,
 ): Promise<CreatePipelineResponse> {
-  return post<CreatePipelineResponse>('/api/pipelines', { dot, context })
+  const body: Record<string, unknown> = { dot, context }
+  if (workingDir) {
+    body.working_dir = workingDir
+  }
+  return post<CreatePipelineResponse>('/api/pipelines', body)
 }
 
 /** GET /api/pipelines/{id} — get pipeline status */
@@ -133,4 +139,31 @@ export function getContext(id: string): Promise<Record<string, unknown>> {
 /** GET /api/pipelines/{id}/nodes/{nodeId}/response — get LLM response artifact */
 export function getNodeResponse(id: string, nodeId: string): Promise<NodeResponseResult> {
   return get<NodeResponseResult>(`/api/pipelines/${id}/nodes/${encodeURIComponent(nodeId)}/response`)
+}
+
+/** GET /api/pipelines/{id}/files — list working directory tree */
+export function getFiles(id: string): Promise<FileNode[]> {
+  return get<FileNode[]>(`/api/pipelines/${id}/files`)
+}
+
+/** GET /api/pipelines/{id}/files/{path} — read a file's contents */
+export async function getFileContent(id: string, filePath: string): Promise<string> {
+  const response = await fetch(`/api/pipelines/${id}/files/${encodeURIComponent(filePath)}`, {
+    method: 'GET',
+  })
+  if (!response.ok) {
+    // Try to parse server error envelope
+    let body: ServerError | null = null
+    try {
+      body = (await response.json()) as ServerError
+    } catch {
+      // Fall back to generic error
+    }
+    if (body?.error) {
+      throw new ApiError(body.error.message, body.error.code, body.error.status)
+    }
+    throw new ApiError(`HTTP error ${response.status}`, 'HTTP_ERROR', response.status)
+  }
+  // File content is returned as plain text, not JSON.
+  return response.text()
 }

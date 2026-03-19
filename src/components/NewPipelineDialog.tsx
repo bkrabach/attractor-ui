@@ -13,6 +13,8 @@ export function NewPipelineDialog({ open, onClose }: NewPipelineDialogProps) {
   const [dotText, setDotText] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [workingDir, setWorkingDir] = useState('')
+  const [showOutputConfig, setShowOutputConfig] = useState(false)
 
   const { pipelines, setPipelines, setActivePipeline } = usePipelineStore()
 
@@ -39,7 +41,7 @@ export function NewPipelineDialog({ open, onClose }: NewPipelineDialogProps) {
     setError(null)
 
     try {
-      const response = await createPipeline(dotText, {})
+      const response = await createPipeline(dotText, {}, workingDir || undefined)
 
       const newPipeline: PipelineSummary = {
         id: response.id,
@@ -54,6 +56,8 @@ export function NewPipelineDialog({ open, onClose }: NewPipelineDialogProps) {
       setActivePipeline(response.id)
 
       setDotText('')
+      setWorkingDir('')
+      setShowOutputConfig(false)
       setActiveTab('paste')
       onClose()
     } catch (err) {
@@ -131,6 +135,35 @@ export function NewPipelineDialog({ open, onClose }: NewPipelineDialogProps) {
             </div>
           </div>
         )}
+
+        {/* Output configuration (collapsible) */}
+        <div className="mt-3">
+          <button
+            onClick={() => setShowOutputConfig(!showOutputConfig)}
+            className="text-xs text-gray-400 hover:text-gray-200 transition-colors"
+            type="button"
+          >
+            {showOutputConfig ? '\u25be' : '\u25b8'} Output
+          </button>
+
+          {showOutputConfig && (
+            <div className="mt-2 space-y-2 p-3 bg-gray-800/50 rounded border border-gray-700">
+              <label className="block">
+                <span className="text-xs text-gray-400">Working directory</span>
+                <input
+                  type="text"
+                  value={workingDir}
+                  onChange={(e) => setWorkingDir(e.target.value)}
+                  placeholder="/home/you/projects/my-pipeline"
+                  className="mt-1 w-full bg-gray-800 text-white px-3 py-2 rounded text-sm border border-gray-700 focus:outline-none focus:border-blue-500"
+                />
+              </label>
+              <p className="text-xs text-gray-500">
+                Leave blank for automatic temp directory. Files created by the pipeline will appear here.
+              </p>
+            </div>
+          )}
+        </div>
 
         {/* Error message */}
         {error && (

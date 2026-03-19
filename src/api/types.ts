@@ -79,6 +79,8 @@ export interface QuestionResponse {
   question_type: QuestionType
   options: QuestionOption[]
   created_at: string
+  /** ATR-BUG-005: Question metadata from the server (includes last_codergen_node). */
+  metadata?: Record<string, string>
 }
 
 /** Response body from GET /pipelines/{id}/questions */
@@ -114,6 +116,26 @@ export interface GraphResponse {
 export interface NodeResponseResult {
   /** LLM response.md content, or null if not yet written */
   content: string | null
+}
+
+// ---------------------------------------------------------------------------
+// File explorer (FE-001 / FE-005)
+// ---------------------------------------------------------------------------
+
+/** A node in the directory tree returned by GET /pipelines/{id}/files */
+export interface FileNode {
+  /** File or directory name (e.g. "plan.md") */
+  name: string
+  /** Path relative to working directory (e.g. "docs/plans/plan.md") */
+  path: string
+  /** "file" or "directory" */
+  type: 'file' | 'directory'
+  /** File size in bytes (files only) */
+  size?: number
+  /** ISO 8601 last-modified timestamp */
+  modified_at?: string
+  /** Child entries (directories only) */
+  children?: FileNode[]
 }
 
 // ---------------------------------------------------------------------------

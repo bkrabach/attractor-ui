@@ -4,21 +4,45 @@ import { usePipelineStatus } from '../hooks/usePipelineStatus'
 import { usePipelineEvents } from '../hooks/usePipelineEvents'
 import { NewPipelineDialog } from './NewPipelineDialog'
 import { cancelPipeline } from '../api/client'
-import type { PipelineStatus } from '../api/types'
+import type { PipelineStatus, QuestionResponse } from '../api/types'
 
 const ID_DISPLAY_LENGTH = 12
 
-function statusDotClass(
+/** Display status includes 'waiting' for running pipelines with pending questions. */
+type DisplayStatus = PipelineStatus | 'waiting'
+
+/**
+ * Derive the display status for a pipeline.
+ *
+ * UI-BUG-019: When a pipeline is "running" but has pending human-input
+ * questions, display "waiting" instead so operators can see at a glance
+ * which pipelines need attention.
+ */
+function deriveDisplayStatus(
   status: PipelineStatus,
-): 'bg-yellow-400' | 'bg-green-400' | 'bg-red-400' | 'bg-gray-400' {
+  pendingQuestions: QuestionResponse[] | undefined,
+): DisplayStatus {
+  if (status === 'running' && pendingQuestions && pendingQuestions.length > 0) {
+    return 'waiting'
+  }
+  return status
+}
+
+function statusDotClass(
+  status: DisplayStatus,
+): 'bg-yellow-400' | 'bg-green-400' | 'bg-red-400' | 'bg-gray-400' | 'bg-blue-400' {
   switch (status) {
     case 'running':
       return 'bg-yellow-400'
+    case 'waiting':
+      return 'bg-blue-400'
     case 'completed':
       return 'bg-green-400'
     case 'failed':
       return 'bg-red-400'
     case 'cancelled':
+      return 'bg-gray-400'
+    default:
       return 'bg-gray-400'
   }
 }
@@ -28,7 +52,7 @@ export function Sidebar() {
   /** ID of the pipeline whose cancel is awaiting confirmation, or null. */
   const [confirmingCancelId, setConfirmingCancelId] = useState<string | null>(null)
 
-  const { pipelines, activePipelineId, setActivePipeline, setPipelineStatus } =
+  const { pipelines, activePipelineId, setActivePipeline, setPipelineStatus, questions } =
     usePipelineStore()
 
   usePipelineStatus()
@@ -75,6 +99,11 @@ export function Sidebar() {
           <ul>
             {sortedPipelines.map((pipeline) => {
               const isActive = pipeline.id === activePipelineId
+              // UI-BUG-019: derive "waiting" status when running + has questions
+              const displayStatus = deriveDisplayStatus(
+                pipeline.status,
+                questions.get(pipeline.id),
+              )
               return (
                 <li key={pipeline.id}>
                   <div
@@ -89,13 +118,13 @@ export function Sidebar() {
                     }}
                   >
                     <span
-                      className={`w-2 h-2 rounded-full flex-shrink-0 ${statusDotClass(pipeline.status)}`}
+                      className={`w-2 h-2 rounded-full flex-shrink-0 ${statusDotClass(displayStatus)}`}
                     ></span>
                     <span className="flex-1 min-w-0">
                       <span className="block font-mono truncate">
                         {pipeline.id.slice(0, ID_DISPLAY_LENGTH)}
                       </span>
-                      <span className="block text-gray-400 text-xs">{pipeline.status}</span>
+                      <span className="block text-gray-400 text-xs">{displayStatus}</span>
                       {pipeline.current_node && (
                         <span className="block text-gray-500 text-xs truncate">
                           {pipeline.current_node}

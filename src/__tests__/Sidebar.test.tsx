@@ -33,6 +33,7 @@ const mockStoreState = vi.hoisted(() => ({
   activePipelineId: null as string | null,
   setActivePipeline: mockSetActivePipeline,
   setPipelineStatus: mockSetPipelineStatus,
+  questions: new Map() as Map<string, Array<{ qid: string; text: string; question_type: string; options: Array<{ key: string; label: string }>; created_at: string }>>,
 }))
 
 vi.mock('../store/pipelines', () => ({
@@ -49,6 +50,7 @@ describe('Sidebar', () => {
     vi.clearAllMocks()
     mockStoreState.pipelines = new Map()
     mockStoreState.activePipelineId = null
+    mockStoreState.questions = new Map()
   })
 
   it('renders the Attractor header', () => {
@@ -225,5 +227,112 @@ describe('Sidebar', () => {
     expect(completedEntry.querySelector('.bg-green-400')).toBeInTheDocument()
     expect(failedEntry.querySelector('.bg-red-400')).toBeInTheDocument()
     expect(cancelledEntry.querySelector('.bg-gray-400')).toBeInTheDocument()
+  })
+
+  // ---------------------------------------------------------------------------
+  // UI-BUG-019: sidebar shows "waiting" for running pipelines with questions
+  // ---------------------------------------------------------------------------
+
+  it('shows "waiting" status for running pipelines with pending questions (UI-BUG-019)', () => {
+    mockStoreState.pipelines = new Map([
+      ['waiting-pipeline-1', {
+        id: 'waiting-pipeline-1',
+        status: 'running' as const,
+        started_at: '2024-01-04T10:00:00Z',
+        completed_nodes: [],
+        current_node: 'ReviewDesign',
+      }],
+    ])
+    // Pipeline has a pending question
+    mockStoreState.questions = new Map([
+      ['waiting-pipeline-1', [{
+        qid: 'q-1',
+        text: 'Approve the design?',
+        question_type: 'confirmation',
+        options: [],
+        created_at: '2024-01-04T10:01:00Z',
+      }]],
+    ])
+    render(<Sidebar />)
+
+    // 'waiting-pipeline-1'.slice(0, 12) === 'waiting-pipe'
+    const entry = screen.getByText('waiting-pipe').closest('[role="button"]')!
+    // Status text should say "waiting", not "running"
+    expect(screen.getByText('waiting')).toBeInTheDocument()
+    // Dot should be blue (waiting), not yellow (running)
+    expect(entry.querySelector('.bg-blue-400')).toBeInTheDocument()
+    expect(entry.querySelector('.bg-yellow-400')).toBeNull()
+  })
+
+  it('shows "running" status when pipeline has no pending questions (UI-BUG-019)', () => {
+    mockStoreState.pipelines = new Map([
+      ['running-pipeline-1', {
+        id: 'running-pipeline-1',
+        status: 'running' as const,
+        started_at: '2024-01-04T10:00:00Z',
+        completed_nodes: [],
+        current_node: 'Build',
+      }],
+    ])
+    // No questions
+    mockStoreState.questions = new Map()
+    render(<Sidebar />)
+
+    // 'running-pipeline-1'.slice(0, 12) === 'running-pipe'
+    const entry = screen.getByText('running-pipe').closest('[role="button"]')!
+    // Status should be "running" with yellow dot
+    expect(screen.getByText('running')).toBeInTheDocument()
+    expect(entry.querySelector('.bg-yellow-400')).toBeInTheDocument()
+  })
+
+  it('shows cancel button for "waiting" pipelines (UI-BUG-019)', () => {
+    // A "waiting" pipeline still has server status "running", so the cancel
+    // button must remain visible.
+    mockStoreState.pipelines = new Map([
+      ['waiting-pipeline-1', {
+        id: 'waiting-pipeline-1',
+        status: 'running' as const,
+        started_at: '2024-01-04T10:00:00Z',
+        completed_nodes: [],
+        current_node: 'ReviewDesign',
+      }],
+    ])
+    mockStoreState.questions = new Map([
+      ['waiting-pipeline-1', [{
+        qid: 'q-1',
+        text: 'Approve?',
+        question_type: 'confirmation',
+        options: [],
+        created_at: '2024-01-04T10:01:00Z',
+      }]],
+    ])
+    render(<Sidebar />)
+
+    // 'waiting-pipeline-1'.slice(0, 12) === 'waiting-pipe'
+    const entry = screen.getByText('waiting-pipe').closest('li')!
+    // Cancel button must be present (underlying status is still 'running')
+    expect(entry.querySelector('[aria-label="Cancel pipeline"]')).toBeInTheDocument()
+  })
+
+  it('reverts from "waiting" to "running" when questions are answered (UI-BUG-019)', () => {
+    mockStoreState.pipelines = new Map([
+      ['running-pipeline-1', {
+        id: 'running-pipeline-1',
+        status: 'running' as const,
+        started_at: '2024-01-04T10:00:00Z',
+        completed_nodes: [],
+        current_node: 'Build',
+      }],
+    ])
+    // Questions are empty (answered)
+    mockStoreState.questions = new Map([
+      ['running-pipeline-1', []],
+    ])
+    render(<Sidebar />)
+
+    const entry = screen.getByText('running-pipe').closest('[role="button"]')!
+    // Empty questions array = still "running", not "waiting"
+    expect(screen.getByText('running')).toBeInTheDocument()
+    expect(entry.querySelector('.bg-yellow-400')).toBeInTheDocument()
   })
 })

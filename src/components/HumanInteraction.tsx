@@ -195,9 +195,11 @@ function QuestionCard({ pipelineId, question, lastCompletedNode, onRemove, isTer
 
       {question.question_type === 'free_text' && (
         <div className="space-y-2">
-          {/* Show previous node's LLM response as context (UI-FEAT-014) */}
-          {lastCompletedNode && (
-            <PreviousNodeResponse pipelineId={pipelineId} nodeId={lastCompletedNode} />
+          {/* ATR-BUG-005: Use last_codergen_node from question metadata to show
+              the most recent LLM response, skipping tool/conditional nodes. Falls
+              back to lastCompletedNode for backward compatibility. */}
+          {(question.metadata?.last_codergen_node ?? lastCompletedNode) && (
+            <PreviousNodeResponse pipelineId={pipelineId} nodeId={question.metadata?.last_codergen_node ?? lastCompletedNode!} />
           )}
           <div className="flex gap-2">
             <input

@@ -78,7 +78,7 @@ describe('NewPipelineDialog', () => {
     await user.click(screen.getByRole('button', { name: /^Run$/i }))
 
     await waitFor(() => {
-      expect(createPipeline).toHaveBeenCalledWith('digraph { A -> B }', {})
+      expect(createPipeline).toHaveBeenCalledWith('digraph { A -> B }', {}, undefined)
       expect(onClose).toHaveBeenCalledTimes(1)
     })
   })
