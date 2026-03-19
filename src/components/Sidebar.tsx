@@ -87,8 +87,8 @@ export function Sidebar() {
   }
 
   return (
-    // Task 1: match bg-gray-950 from Dashboard panel containers
-    <aside className="w-64 min-w-48 bg-gray-950 flex flex-col h-full text-white">
+    // Task 1: match bg-gray-950 from Dashboard panel containers; Fix 6: right border divider
+    <aside className="w-64 min-w-48 bg-gray-950 flex flex-col h-full text-white border-r border-gray-800">
       {/* Task 5: "Attractor" title removed — header element removed entirely */}
 
       <div className="flex-1 overflow-y-auto pt-2">

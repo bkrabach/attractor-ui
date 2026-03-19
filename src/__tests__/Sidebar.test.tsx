@@ -337,4 +337,16 @@ describe('Sidebar', () => {
     expect(screen.getByText('running')).toBeInTheDocument()
     expect(entry.querySelector('.bg-yellow-400')).toBeInTheDocument()
   })
+
+  // ---------------------------------------------------------------------------
+  // Fix 6: Sidebar right border divider
+  // ---------------------------------------------------------------------------
+
+  it('Fix 6: sidebar aside element has right border divider class', () => {
+    render(<Sidebar />)
+    const aside = document.querySelector('aside')
+    expect(aside).toBeInTheDocument()
+    // Should have a right border to visually separate from main content
+    expect(aside?.className).toMatch(/border-r/)
+  })
 })

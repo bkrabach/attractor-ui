@@ -125,18 +125,22 @@ function buildCollapsedRows(events: PipelineEvent[]): CollapsedRow[] {
       continue
     }
 
-    // Only collapse stage-level events; others pass through
-    if (
-      event.event !== 'stage_started' &&
-      event.event !== 'stage_completed' &&
-      event.event !== 'stage_failed' &&
-      event.event !== 'stage_retrying'
-    ) {
+    // Only collapse stage-level and parallel-branch events; others pass through
+    const isStartEvent = event.event === 'stage_started' || event.event === 'parallel_branch_started'
+    const isCollapseEvent =
+      event.event === 'stage_started' ||
+      event.event === 'stage_completed' ||
+      event.event === 'stage_failed' ||
+      event.event === 'stage_retrying' ||
+      event.event === 'parallel_branch_started' ||
+      event.event === 'parallel_branch_completed'
+
+    if (!isCollapseEvent) {
       rows.push({ nodeName, passNumber: 0, latestEvent: event, isRunning: false })
       continue
     }
 
-    if (event.event === 'stage_started') {
+    if (isStartEvent) {
       const pass = (passCount.get(nodeName) ?? 0) + 1
       passCount.set(nodeName, pass)
       const key = `${nodeName}:${pass}`
@@ -145,7 +149,7 @@ function buildCollapsedRows(events: PipelineEvent[]): CollapsedRow[] {
     } else {
       const pass = passCount.get(nodeName) ?? 0
       if (pass === 0) {
-        // Orphan completion (no prior stage_started) — create a row for it
+        // Orphan completion (no prior started event) — create a row for it
         passCount.set(nodeName, 1)
         const key = `${nodeName}:1`
         rows.push({ nodeName, passNumber: 1, latestEvent: event, isRunning: false })

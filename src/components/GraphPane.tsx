@@ -168,8 +168,8 @@ export function GraphPane() {
   const originalSvgRef = useRef<string>('')
   const [svgContent, setSvgContent] = useState<string>('')
   const [renderError, setRenderError] = useState<string | null>(null)
-  // Task 2c: default scale 0.75 (slightly small rather than too big)
-  const [scale, setScale] = useState(0.75)
+  // Fix 3: default scale 1.5 for comfortable readability
+  const [scale, setScale] = useState(1.5)
 
   // Drag state — ALL in refs, zero React state updates, so mouseDown never
   // triggers a re-render that would reset dangerouslySetInnerHTML.
@@ -187,7 +187,7 @@ export function GraphPane() {
     originalSvgRef.current = raw
     const pipelineEvents = eventsRef.current.get(pipelineId) ?? []
     setSvgContent(processSvg(raw, pipelineEvents, selectedNodeIdRef.current))
-    setScale(0.75) // Task 2c: reset to 0.75 on new pipeline load
+    setScale(1.5) // Fix 3: reset to 1.5 on new pipeline load
   }, [])
 
   useEffect(() => {
@@ -218,7 +218,7 @@ export function GraphPane() {
       e.preventDefault()
       // Scroll up (negative deltaY) = zoom in; scroll down = zoom out
       const delta = e.deltaY > 0 ? -0.1 : 0.1
-      setScale((s) => Math.min(Math.max(s + delta, 0.1), 3.0))
+      setScale((s) => Math.min(Math.max(s + delta, 0.1), 5.0))
     }
     container.addEventListener('wheel', handleWheel, { passive: false })
     return () => container.removeEventListener('wheel', handleWheel)
@@ -298,7 +298,7 @@ export function GraphPane() {
         <button
           aria-label="Zoom in" title="Zoom in"
           className="w-7 h-7 rounded bg-gray-700 hover:bg-gray-600 text-white text-sm font-bold flex items-center justify-center"
-          onClick={() => setScale((s) => Math.min(s * 1.25, 3.0))}
+          onClick={() => setScale((s) => Math.min(s * 1.25, 5.0))}
         >+</button>
         <button
           aria-label="Zoom out" title="Zoom out"
@@ -306,9 +306,9 @@ export function GraphPane() {
           onClick={() => setScale((s) => Math.max(s / 1.25, 0.1))}
         >−</button>
         <button
-          aria-label="Reset zoom" title="Reset zoom to 75%"
+          aria-label="Reset zoom" title="Reset zoom to 150%"
           className="px-2 h-7 rounded bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium flex items-center justify-center"
-          onClick={() => setScale(0.75)}
+          onClick={() => setScale(1.5)}
         >Reset</button>
       </div>
 

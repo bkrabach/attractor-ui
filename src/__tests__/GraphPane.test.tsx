@@ -609,6 +609,59 @@ describe('GraphPane', () => {
     })
   })
 
+  // ---------------------------------------------------------------------------
+  // Fix 2+3: Default scale 1.5, max zoom 5.0, Reset restores 1.5
+  // ---------------------------------------------------------------------------
+
+  it('Fix 3: Reset button restores scale to 1.5 (not 0.75)', async () => {
+    const user = userEvent.setup()
+    mockActivePipelineId.current = 'pipe-1'
+
+    const { container } = render(<GraphPane />)
+
+    await waitFor(() => {
+      expect(container.querySelector('svg')).toBeInTheDocument()
+    })
+
+    // Click zoom out to move away from default
+    const zoomOut = screen.getByRole('button', { name: /zoom out/i })
+    await user.click(zoomOut)
+
+    // Click Reset
+    const reset = screen.getByRole('button', { name: /reset/i })
+    await user.click(reset)
+
+    // Scale should be 1.5 after reset
+    const scalerDiv = container.querySelector('[style*="scale"]')
+    const style = (scalerDiv as HTMLElement)?.style
+    expect(style?.transform).toContain('1.5')
+  })
+
+  it('Fix 2: zoom-in button can scale beyond 3.0 up to 5.0', async () => {
+    const user = userEvent.setup()
+    mockActivePipelineId.current = 'pipe-1'
+
+    const { container } = render(<GraphPane />)
+
+    await waitFor(() => {
+      expect(container.querySelector('svg')).toBeInTheDocument()
+    })
+
+    // Click zoom in many times to push past 3.0
+    const zoomIn = screen.getByRole('button', { name: /zoom in/i })
+    for (let i = 0; i < 20; i++) {
+      await user.click(zoomIn)
+    }
+
+    // Scale should exceed 3.0 (was previously capped at 3.0)
+    const scalerDiv = container.querySelector('[style*="scale"]')
+    const style = (scalerDiv as HTMLElement)?.style
+    // Parse the scale value from transform like "scale(4.5)" or "scale(5)"
+    const match = style?.transform.match(/scale\(([^)]+)\)/)
+    const scaleValue = match ? parseFloat(match[1]) : 0
+    expect(scaleValue).toBeGreaterThan(3.0)
+  })
+
   it('UI-BUG-021: parallel_branch_started alone colors node yellow (#eab308)', async () => {
     mockActivePipelineId.current = 'pipe-1'
     mockEvents.current = new Map([

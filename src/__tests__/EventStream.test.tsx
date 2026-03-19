@@ -355,6 +355,58 @@ describe('EventStream', () => {
   // UI-BUG-018: Cancel stops pulsing indicator in EventStream
   // ---------------------------------------------------------------------------
 
+  // ---------------------------------------------------------------------------
+  // Fix 5: parallel_branch_started collapses to completed status
+  // ---------------------------------------------------------------------------
+
+  it('Fix 5: parallel_branch_started+completed collapse into one row showing green (completed)', () => {
+    mockActivePipelineId.current = 'pipe-1'
+    mockEvents.current = new Map([
+      [
+        'pipe-1',
+        [
+          {
+            event: 'parallel_branch_started',
+            branch: 'BranchA',
+            index: 0,
+          } as PipelineEvent,
+          {
+            event: 'parallel_branch_completed',
+            branch: 'BranchA',
+            index: 0,
+            duration: { __duration_ms: 1000 },
+            success: true,
+          } as PipelineEvent,
+        ],
+      ],
+    ])
+    mockPipelines.current = new Map([
+      [
+        'pipe-1',
+        {
+          id: 'pipe-1',
+          status: 'completed',
+          started_at: new Date().toISOString(),
+          completed_nodes: [],
+          current_node: null,
+        },
+      ],
+    ])
+
+    const { container } = render(<EventStream />)
+
+    // After fix: one row for BranchA showing green (completed), not yellow (pending)
+    const branchRows = screen.getAllByText('BranchA')
+    expect(branchRows).toHaveLength(1)
+
+    // The icon should be green (success), not yellow (pending/started)
+    const greenIcon = container.querySelector('.text-green-400')
+    expect(greenIcon).toBeInTheDocument()
+    // Should NOT have a yellow icon for BranchA (yellow means "pending/started")
+    const yellowIcon = container.querySelector('.text-yellow-400')
+    expect(yellowIcon).not.toBeInTheDocument()
+  })
+
   it('UI-BUG-018: cancelled pipeline does NOT show pulsing indicator even if last event was stage_started', () => {
     // When a pipeline is cancelled while a stage is running, the stage_started
     // event remains in the event log. EventStream should NOT show the pulsing

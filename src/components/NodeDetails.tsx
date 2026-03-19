@@ -511,7 +511,15 @@ export function NodeDetails() {
             ) : responseContent === null ? (
               <div className="text-xs text-gray-500 italic">Waiting for response...</div>
             ) : (
-              <ResponseTabs content={responseContent} activeTab={activeResponseTab} onTabChange={setActiveResponseTab} />
+              <>
+                {/* Fix 4: Show notice when viewing a non-latest instance */}
+                {selectedInstanceIndex !== null && selectedInstanceIndex < instanceCount && (
+                  <div className="text-xs text-yellow-600 italic mb-1">
+                    Showing latest response — instance-specific responses not available.
+                  </div>
+                )}
+                <ResponseTabs content={responseContent} activeTab={activeResponseTab} onTabChange={setActiveResponseTab} />
+              </>
             )}
           </div>
         )}

@@ -7,6 +7,8 @@ import type { PipelineEvent } from '../api/types'
 // ---------------------------------------------------------------------------
 
 const mockSelectedNodeId = vi.hoisted(() => ({ current: null as string | null }))
+const mockSelectedInstanceIndex = vi.hoisted(() => ({ current: null as number | null }))
+const mockSelectNodeWithInstance = vi.hoisted(() => vi.fn())
 const mockActivePipelineId = vi.hoisted(() => ({ current: null as string | null }))
 const mockEvents = vi.hoisted(() => ({ current: new Map<string, PipelineEvent[]>() }))
 const mockGetNodeResponse = vi.hoisted(() =>
@@ -20,6 +22,8 @@ const mockGetNodeResponse = vi.hoisted(() =>
 vi.mock('../store/pipelines', () => ({
   usePipelineStore: () => ({
     selectedNodeId: mockSelectedNodeId.current,
+    selectedInstanceIndex: mockSelectedInstanceIndex.current,
+    selectNodeWithInstance: mockSelectNodeWithInstance,
     activePipelineId: mockActivePipelineId.current,
     events: mockEvents.current,
   }),
@@ -39,6 +43,8 @@ import { NodeDetails } from '../components/NodeDetails'
 describe('NodeDetails', () => {
   beforeEach(() => {
     mockSelectedNodeId.current = null
+    mockSelectedInstanceIndex.current = null
+    mockSelectNodeWithInstance.mockClear()
     mockActivePipelineId.current = null
     mockEvents.current = new Map()
     mockGetNodeResponse.mockClear()
@@ -222,6 +228,44 @@ describe('NodeDetails', () => {
       // Default tab shows the extracted last response, not the full content
       expect(screen.getByText('Here is my final analysis.')).toBeInTheDocument()
       expect(screen.queryByText('[tool_call] read_files')).not.toBeInTheDocument()
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // Fix 4: Instance navigation shows event data + "latest response" notice
+  // ---------------------------------------------------------------------------
+
+  it('Fix 4: shows "Showing latest response" notice when viewing a non-latest instance', async () => {
+    mockSelectedNodeId.current = 'my-node'
+    mockSelectedInstanceIndex.current = 1 // first of two instances
+    mockActivePipelineId.current = 'pipe-1'
+    mockEvents.current = new Map([
+      [
+        'pipe-1',
+        [
+          { event: 'stage_started', name: 'my-node', index: 0 } as PipelineEvent,
+          {
+            event: 'stage_completed',
+            name: 'my-node',
+            index: 0,
+            duration: { __duration_ms: 1000 },
+          } as PipelineEvent,
+          { event: 'stage_started', name: 'my-node', index: 1 } as PipelineEvent,
+          {
+            event: 'stage_completed',
+            name: 'my-node',
+            index: 1,
+            duration: { __duration_ms: 2000 },
+          } as PipelineEvent,
+        ],
+      ],
+    ])
+    mockGetNodeResponse.mockResolvedValue({ content: 'The LLM output.' })
+
+    render(<NodeDetails />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/Showing latest response/i)).toBeInTheDocument()
     })
   })
 
