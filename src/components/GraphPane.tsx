@@ -21,6 +21,57 @@ const NODE_COLORS: Record<string, NodeColorEntry> = {
 }
 
 // ---------------------------------------------------------------------------
+// Cover-fit pure helpers — exported for unit testing
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the intrinsic pixel dimensions from a raw Graphviz SVG string.
+ * Graphviz emits `width="741pt" height="1772pt"` — we convert pt → px
+ * (1 pt = 1.333 px at 96 dpi / 72 dpi) so callers can compute a cover-fit
+ * scale without relying on live DOM measurements of the SVG element.
+ *
+ * Returns null if the SVG has no pt-unit dimensions (e.g. already processed).
+ */
+export function extractSvgDimensions(
+  svg: string,
+): { widthPx: number; heightPx: number } | null {
+  const match = svg.match(/width="([\d.]+)pt"[^>]*height="([\d.]+)pt"/)
+  if (!match) return null
+  const PT_TO_PX = 1.333 // 96 dpi ÷ 72 dpi
+  return {
+    widthPx: parseFloat(match[1]) * PT_TO_PX,
+    heightPx: parseFloat(match[2]) * PT_TO_PX,
+  }
+}
+
+/**
+ * Compute the initial scale and pan for a "cover-fit" view:
+ * - Portrait graph (taller than wide relative to the container): fill width,
+ *   align the top of the graph to the top of the container.
+ * - Landscape graph (wider than tall relative to container): fill height,
+ *   align the left of the graph to the left edge of the container.
+ *
+ * Pan is always { x: 0, y: 0 } — the transform-origin is top-left, so the
+ * graph's top-left corner sits at the container's top-left after translation.
+ */
+export function computeCoverFit(
+  graphWidthPx: number,
+  graphHeightPx: number,
+  containerWidth: number,
+  containerHeight: number,
+): { scale: number; pan: { x: number; y: number } } {
+  const graphAspect = graphHeightPx / graphWidthPx
+  const containerAspect = containerHeight / containerWidth
+
+  const scale =
+    graphAspect > containerAspect
+      ? containerWidth / graphWidthPx   // portrait: fill width
+      : containerHeight / graphHeightPx // landscape: fill height
+
+  return { scale, pan: { x: 0, y: 0 } }
+}
+
+// ---------------------------------------------------------------------------
 // SVG preprocessing helpers (no post-render DOM manipulation)
 // ---------------------------------------------------------------------------
 
@@ -34,15 +85,34 @@ function injectRankdirTB(dot: string): string {
 /**
  * Apply dark-theme base styling via string preprocessing — survives
  * dangerouslySetInnerHTML re-renders without post-render DOM manipulation.
+ *
+ * Sets explicit pixel dimensions on the SVG (converted from Graphviz's pt
+ * units) so that CSS `transform: scale()` operates against a known, fixed size
+ * rather than the container's 100% dimensions.
  */
 function applyDarkTheme(svg: string): string {
   let result = svg.replace(/<svg\b([^>]*)>/, (_match, attrs) => {
+    // Extract pt dimensions before stripping them — use for explicit px sizing
+    const wMatch = attrs.match(/width="([\d.]+)pt"/)
+    const hMatch = attrs.match(/height="([\d.]+)pt"/)
+    const PT_TO_PX = 1.333
+    const widthPx = wMatch ? Math.round(parseFloat(wMatch[1]) * PT_TO_PX) : undefined
+    const heightPx = hMatch ? Math.round(parseFloat(hMatch[1]) * PT_TO_PX) : undefined
+
     const cleaned = attrs
       .replace(/\s*style="[^"]*"/g, '')
       .replace(/\s*width="[^"]*pt"/, '')
       .replace(/\s*height="[^"]*pt"/, '')
       .replace(/\s*preserveAspectRatio="[^"]*"/, '')
-    return `<svg${cleaned} width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style="background:transparent">`
+
+    // Use explicit pixel dimensions so CSS transform: scale() is predictable.
+    // Fall back to 100%/100% only if no pt dimensions were present.
+    const sizeAttrs =
+      widthPx && heightPx
+        ? `width="${widthPx}" height="${heightPx}"`
+        : 'width="100%" height="100%"'
+
+    return `<svg${cleaned} ${sizeAttrs} preserveAspectRatio="xMidYMid meet" style="background:transparent">`
   })
   // Remove Graphviz's white background polygon (UI-BUG-013)
   result = result.replace(/fill="white"/g, 'fill="transparent"')
@@ -166,9 +236,14 @@ export function GraphPane() {
   selectedNodeIdRef.current = selectedNodeId
 
   const originalSvgRef = useRef<string>('')
+  // Intrinsic graph dimensions extracted from the raw Graphviz SVG (in px).
+  // Used by the cover-fit useEffect and the Reset handler.
+  const graphDimsRef = useRef<{ widthPx: number; heightPx: number } | null>(null)
+
   const [svgContent, setSvgContent] = useState<string>('')
   const [renderError, setRenderError] = useState<string | null>(null)
-  // Fix 3: default scale 1.5 for comfortable readability
+  // Initial scale of 1.5 is the JSDOM / no-layout fallback.
+  // In a real browser the cover-fit useEffect overrides this after the first render.
   const [scale, setScale] = useState(1.5)
   // Step 1: Pan state for trackpad two-finger scroll and click-drag
   const [pan, setPan] = useState({ x: 0, y: 0 })
@@ -190,9 +265,13 @@ export function GraphPane() {
     const viz = await instance()
     const raw = viz.renderString(injectRankdirTB(dot), { format: 'svg' })
     originalSvgRef.current = raw
+    // Extract intrinsic dimensions from the raw SVG before applyDarkTheme strips them.
+    graphDimsRef.current = extractSvgDimensions(raw)
     const pipelineEvents = eventsRef.current.get(pipelineId) ?? []
     setSvgContent(processSvg(raw, pipelineEvents, selectedNodeIdRef.current))
-    setScale(1.5) // Fix 3: reset to 1.5 on new pipeline load
+    // NOTE: setScale intentionally omitted here — the cover-fit useEffect below
+    // computes the correct initial scale from container + graph dimensions.
+    // In JSDOM / zero-layout environments it skips and leaves useState's 1.5.
     setPan({ x: 0, y: 0 }) // Step 6: reset pan on pipeline change
   }, [])
 
@@ -204,10 +283,33 @@ export function GraphPane() {
       })
     } else {
       originalSvgRef.current = ''
+      graphDimsRef.current = null
       setSvgContent('')
       setRenderError(null)
     }
   }, [activePipelineId, renderDot])
+
+  // Cover-fit: compute initial scale/pan after the SVG renders so the graph
+  // fills the available space with the start node visible.
+  useEffect(() => {
+    if (!svgContent) return
+    const container = containerRef.current
+    const dims = graphDimsRef.current
+    if (!container || !dims) return
+
+    const rect = container.getBoundingClientRect()
+    // p-8 = 32px padding on each side → 64px total per axis
+    const cw = rect.width - 64
+    const ch = rect.height - 64
+    // Guard: JSDOM returns 0×0; skip cover-fit so the 1.5 fallback stays.
+    if (cw <= 0 || ch <= 0) return
+
+    const { scale: fitScale, pan: fitPan } = computeCoverFit(
+      dims.widthPx, dims.heightPx, cw, ch,
+    )
+    setScale(fitScale)
+    setPan(fitPan)
+  }, [svgContent]) // runs whenever the SVG content changes (new pipeline loaded)
 
   // Recolor SVG when pipeline events change after initial load, or when selection changes
   useEffect(() => {
@@ -296,6 +398,32 @@ export function GraphPane() {
     setTimeout(() => { isDraggingRef.current = false }, 0)
   }, [])
 
+  // Reset handler: apply cover-fit when container has real dimensions,
+  // fall back to scale=1.5 + pan=0 (JSDOM / zero-layout environments).
+  const handleReset = useCallback(() => {
+    const container = containerRef.current
+    const dims = graphDimsRef.current
+    if (!container || !dims) {
+      setPan({ x: 0, y: 0 })
+      setScale(1.5)
+      return
+    }
+    const rect = container.getBoundingClientRect()
+    const cw = rect.width - 64
+    const ch = rect.height - 64
+    if (cw <= 0 || ch <= 0) {
+      // JSDOM / no-layout fallback
+      setPan({ x: 0, y: 0 })
+      setScale(1.5)
+      return
+    }
+    const { scale: fitScale, pan: fitPan } = computeCoverFit(
+      dims.widthPx, dims.heightPx, cw, ch,
+    )
+    setScale(fitScale)
+    setPan(fitPan)
+  }, [])
+
   if (!activePipelineId) {
     return (
       <div className="flex items-center justify-center h-full text-gray-500 text-sm">
@@ -325,9 +453,9 @@ export function GraphPane() {
           onClick={() => setScale((s) => Math.max(s / 1.25, 0.1))}
         >−</button>
         <button
-          aria-label="Reset zoom" title="Reset zoom to 150%"
+          aria-label="Reset zoom" title="Reset zoom to cover fit"
           className="px-2 h-7 rounded bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium flex items-center justify-center"
-          onClick={() => { setPan({ x: 0, y: 0 }); setScale(1.5) }}
+          onClick={handleReset}
         >Reset</button>
       </div>
 

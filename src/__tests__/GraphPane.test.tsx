@@ -2,6 +2,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { PipelineEvent } from '../api/types'
+import { extractSvgDimensions, computeCoverFit } from '../components/GraphPane'
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks — must be defined before vi.mock() calls
@@ -837,6 +838,27 @@ describe('GraphPane', () => {
     })
   })
 
+  // ---------------------------------------------------------------------------
+  // Cover-fit: initial zoom/pan — cover the available space (portrait/landscape)
+  // ---------------------------------------------------------------------------
+
+  it('cover-fit: SVG has explicit pixel dimensions after render (not 100%/100%)', async () => {
+    mockActivePipelineId.current = 'pipe-1'
+    mockRenderString.mockReturnValue(
+      '<svg width="400pt" height="800pt" viewBox="0 0 400 800"><g id="node1"><title>nodeA</title></g></svg>',
+    )
+
+    const { container } = render(<GraphPane />)
+
+    await waitFor(() => {
+      const svgEl = container.querySelector('svg')
+      expect(svgEl).toBeInTheDocument()
+      // SVG must NOT use 100% dimensions (which make cover-fit unpredictable)
+      expect(svgEl?.getAttribute('width')).not.toBe('100%')
+      expect(svgEl?.getAttribute('height')).not.toBe('100%')
+    })
+  })
+
   it('UI-BUG-021: parallel_branch_started alone colors node yellow (#eab308)', async () => {
     mockActivePipelineId.current = 'pipe-1'
     mockEvents.current = new Map([
@@ -861,5 +883,68 @@ describe('GraphPane', () => {
       const polygon = container.querySelector('g polygon')
       expect(polygon?.getAttribute('fill')).toBe('#eab308')
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// cover-fit pure helpers — tested independently of component/JSDOM layout
+// ---------------------------------------------------------------------------
+
+describe('extractSvgDimensions', () => {
+  it('returns null for SVG without pt dimensions', () => {
+    expect(extractSvgDimensions('<svg width="100%" height="100%">')).toBeNull()
+    expect(extractSvgDimensions('<svg>')).toBeNull()
+  })
+
+  it('parses width and height in pt and converts to px (1 pt = 1.333 px)', () => {
+    const dims = extractSvgDimensions(
+      '<svg width="741pt" height="1772pt" viewBox="0.00 0.00 741.00 1772.00">',
+    )
+    expect(dims).not.toBeNull()
+    expect(dims!.widthPx).toBeCloseTo(741 * 1.333, 1)
+    expect(dims!.heightPx).toBeCloseTo(1772 * 1.333, 1)
+  })
+
+  it('parses decimal pt values (e.g. "62.50pt")', () => {
+    const dims = extractSvgDimensions('<svg width="62.50pt" height="476.00pt">')
+    expect(dims).not.toBeNull()
+    expect(dims!.widthPx).toBeCloseTo(62.5 * 1.333, 1)
+    expect(dims!.heightPx).toBeCloseTo(476.0 * 1.333, 1)
+  })
+})
+
+describe('computeCoverFit', () => {
+  it('portrait graph (height/width > container height/width) fills width, aligns top', () => {
+    // graph 400×800px in a 600×400 container
+    // graphAspect = 2.0, containerAspect = 0.667 → portrait → fill width
+    const result = computeCoverFit(400, 800, 600, 400)
+    expect(result.scale).toBeCloseTo(600 / 400, 5) // 1.5
+    expect(result.pan).toEqual({ x: 0, y: 0 })
+  })
+
+  it('landscape graph (height/width < container height/width) fills height, aligns left', () => {
+    // graph 800×400px in a 600×400 container
+    // graphAspect = 0.5, containerAspect = 0.667 → landscape → fill height
+    const result = computeCoverFit(800, 400, 600, 400)
+    expect(result.scale).toBeCloseTo(400 / 400, 5) // 1.0
+    expect(result.pan).toEqual({ x: 0, y: 0 })
+  })
+
+  it('square graph in landscape container: graphAspect(1.0) > containerAspect(0.5) → portrait branch → fills width', () => {
+    // graph 500×500px in a 800×400 container
+    // graphAspect = 1.0, containerAspect = 400/800 = 0.5
+    // 1.0 > 0.5 → portrait branch → fill width → scale = cw/graphW = 800/500 = 1.6
+    const result = computeCoverFit(500, 500, 800, 400)
+    expect(result.scale).toBeCloseTo(800 / 500, 5) // 1.6
+    expect(result.pan).toEqual({ x: 0, y: 0 })
+  })
+
+  it('square graph in portrait container: graphAspect(1.0) < containerAspect(2.0) → landscape branch → fills height', () => {
+    // graph 500×500px in a 400×800 container
+    // graphAspect = 1.0, containerAspect = 800/400 = 2.0
+    // 1.0 NOT > 2.0 → landscape branch → fill height → scale = ch/graphH = 800/500 = 1.6
+    const result = computeCoverFit(500, 500, 400, 800)
+    expect(result.scale).toBeCloseTo(800 / 500, 5) // 1.6
+    expect(result.pan).toEqual({ x: 0, y: 0 })
   })
 })
