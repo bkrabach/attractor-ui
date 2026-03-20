@@ -1,73 +1,50 @@
-# React + TypeScript + Vite
+# attractor-ui
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Web frontend for the [attractor](https://github.com/bkrabach/attractor) pipeline runner.
 
-Currently, two official plugins are available:
+[![CI](https://github.com/bkrabach/attractor-ui/actions/workflows/ci.yaml/badge.svg)](https://github.com/bkrabach/attractor-ui/actions)
+[![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Overview
 
-## React Compiler
+A React-based dashboard for running and observing attractor pipelines:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Pipeline graph** — interactive DAG visualization with zoom, pan, and node selection
+- **Event stream** — real-time pipeline events with collapsible per-node grouping
+- **Human-in-the-loop** — answer pipeline questions directly in the browser
+- **File explorer** — browse pipeline working directory contents with markdown rendering
+- **Node details** — inspect node responses with instance navigation for looped nodes
 
-## Expanding the ESLint configuration
+## Quick Start
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+git clone https://github.com/bkrabach/attractor-ui.git
+cd attractor-ui
+npm install --legacy-peer-deps
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Requires [attractor-server](https://github.com/bkrabach/attractor-server) running on port 3000.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Tech Stack
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+- React 19 + TypeScript
+- Tailwind CSS
+- Vite
+- Vitest for testing
+- @viz-js/viz for DOT graph rendering
+
+## Development
+
+```bash
+npm run dev          # Start dev server
+npx vitest run       # Run tests
+npx vite build       # Production build
 ```
+
+## Related
+
+- [attractor](https://github.com/bkrabach/attractor) — Pipeline engine
+- [attractor-server](https://github.com/bkrabach/attractor-server) — HTTP API server
+- [unified-llm](https://github.com/bkrabach/unified-llm) — Multi-provider LLM client
+- [coding-agent-loop](https://github.com/bkrabach/coding-agent-loop) — Agentic tool loop
