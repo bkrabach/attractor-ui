@@ -79,7 +79,7 @@ function PreviousNodeResponse({ pipelineId, nodeId }: PreviousNodeResponseProps)
           </button>
         </div>
       )}
-      <div className="p-2 rounded bg-gray-800 border border-gray-700 text-xs text-gray-300 max-h-40 overflow-y-auto whitespace-pre-wrap">
+      <div className="p-2 rounded bg-gray-800 border border-gray-700 text-xs text-gray-300 whitespace-pre-wrap">
         {displayContent}
       </div>
     </div>
